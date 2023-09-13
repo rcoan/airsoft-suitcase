@@ -1,14 +1,14 @@
 //Dependencies
 #include <Wire.h>               // default lib for i2c display
 #include <LiquidCrystal_I2C.h>  // custom lib to deal with lcd i2c
-#include <Keypad.h>
-#include <CountDown.h>
+#include <Keypad.h>             // Lib to handle numpad inputs
+#include <CountDown.h>          // Lib to handle timer
 
-//System Definitions
-const byte NUMPAD_ROW_QTY = 4;
-const byte NUMPAD_COLUMN_QTY = 4;
+// System Definitions
 
 // Numpad Configs
+const byte NUMPAD_ROW_QTY = 4;
+const byte NUMPAD_COLUMN_QTY = 4;
 const char NUMPAD_KEY_VALUES[NUMPAD_ROW_QTY][NUMPAD_COLUMN_QTY] = {
   { '1', '2', '3', 'A' },
   { '4', '5', '6', 'B' },
@@ -26,13 +26,36 @@ Keypad keypad = Keypad(makeKeymap(NUMPAD_KEY_VALUES),
                        NUMPAD_COLUMN_QTY);
 
 // LCD display configs
-LiquidCrystal_I2C lcd(0x27, 16, 2);
+LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Check yours.
+
+// Timer
+int CD_TIME_M = 10; // default value for countdown in minutes
+const int last_second_counted = 0; // def last second processed
+CountDown timer; // define timer object
+char display_timer_value[16]; // define countdown timer display string to be modified
+
+// password related
+#define Password_Length 7 // Last digit should be empty, max size is actually 6
+
+char MASTER_PASSWORD[Password_Length] = "*5456*";
+char valid_passwords[3][Password_Length] = {
+  "123456", // Team A
+  "987654", // Team B
+  "741852"  // Team C
+};
+
+char current_password[Password_Length]; // current password being entered
+char input_key; // last key entered
+byte pass_count = 0; // amount of digits in the current password array
+int attempts = 0; // failed attempts since last reset
+const int max_attempts = 3; // maximum of attempts before action required
+char pass_team = 'M'; // default password team
 
 // PINOUT
 int siren_output = 12;
 int activity_led_output = 13;
 
-// application configs
+// App states configs
 const char* INIT_STATE = "init_st";
 const char* CD_STATE = "cd_st";
 const char* PREMATURE_EXPLOSION_STATE = "pe_st";
@@ -41,32 +64,10 @@ const char* DISARMED_STATE = "disarmed_st";
 const char* ADM_STATE = "adm_st";
 char* state = INIT_STATE;
 
-// Timer
-int CD_TIME_M = 1;
-int last_second = 0;
-CountDown timer;
-char display_timer_value[16];
-
-// password related
-#define Password_Length 7
-
-char MASTER_PASSWORD[Password_Length] = "*5456*";
-char valid_passwords[3][Password_Length] = {
-  "123456",
-  "987654",
-  "741852"
-};
-char cr_pass[Password_Length];
-char input_key;
-byte pass_count = 0;
-int attempts = 0;
-const int max_attempts = 3;
-char pass_team = 'N';
-
 void setup() {
   // serial for debug
   Serial.begin(9600);
-  
+
   // LCD setup
   lcd.backlight();
   lcd.init();
@@ -74,16 +75,18 @@ void setup() {
   // pinout setup
   pinMode(siren_output, OUTPUT);
   digitalWrite(siren_output, LOW);
+  // activity led & buzzer
   pinMode(activity_led_output, OUTPUT);
   digitalWrite(activity_led_output, LOW);
 
   // init variables
-  reset_cr_pass_input();
+  reset_current_password_input();
 }
+
 // Utils
 void process_input(){
   process_key_input();
-  print_line(cr_pass, 1);
+  print_line(current_password, 1);
   lcd.setCursor(pass_count, 1);
 }
 
@@ -137,8 +140,8 @@ void start_countdown(){
 }
 
 // Password functions
-void reset_cr_pass_input() {
-  memset(cr_pass, '\0', Password_Length * sizeof(char));
+void reset_current_password_input() {
+  memset(current_password, '\0', Password_Length * sizeof(char));
   pass_count = 0;
   lcd.clear();
 }
@@ -170,14 +173,14 @@ void invalid_pass() {
 }
 
 void validate_pass() {
-  if (!strcmp(MASTER_PASSWORD, cr_pass)) {
+  if (!strcmp(MASTER_PASSWORD, current_password)) {
     valid_pass();
     if (state == INIT_STATE){
       state = ADM_STATE;
     } else {
-      state = INIT_STATE; 
+      state = INIT_STATE;
     }
-  } else if (!strcmp(valid_passwords[0], cr_pass)) {
+  } else if (!strcmp(valid_passwords[0], current_password)) {
     valid_pass();
     pass_team = 'A';
     if (state == INIT_STATE) {
@@ -185,7 +188,7 @@ void validate_pass() {
     } else if(state == CD_STATE) {
       process_disarm_bomb();
     }
-  } else if (!strcmp(valid_passwords[1], cr_pass)) {
+  } else if (!strcmp(valid_passwords[1], current_password)) {
     valid_pass();
     pass_team = 'B';
     if (state == INIT_STATE) {
@@ -193,7 +196,7 @@ void validate_pass() {
     } else if(state == CD_STATE) {
       process_disarm_bomb();
     }
-  } else if (!strcmp(valid_passwords[2], cr_pass)) {
+  } else if (!strcmp(valid_passwords[2], current_password)) {
     valid_pass();
     pass_team = 'C';
     if (state == INIT_STATE) {
@@ -204,7 +207,7 @@ void validate_pass() {
   } else {
     invalid_pass();
   }
-  reset_cr_pass_input();
+  reset_current_password_input();
 }
 
 // Proccess input functions
@@ -226,11 +229,11 @@ void process_key_input() {
       case 'C':
         break;
       case 'D':
-        reset_cr_pass_input();
+        reset_current_password_input();
         break;
       default:
         // add input to array
-        cr_pass[pass_count] = input_key;
+        current_password[pass_count] = input_key;
         pass_count++;
         if (pass_count == (Password_Length -1)) {
           validate_pass();
@@ -289,10 +292,10 @@ void countdown_menu(){
   format_sec_to_print(seconds_left);
   print_line(display_timer_value, 0);
   process_input();
-  
-  if(last_second != seconds_left) {
+
+  if(last_second_counted != seconds_left) {
     indicate_activity(activity_led_output);
-    last_second = seconds_left;
+    last_second_counted = seconds_left;
   }
 
   if(seconds_left == 0) {
