@@ -100,7 +100,6 @@ void valid_pass(){
   attempts = 0;
 }
 
-
 void print_line(char* string, uint8_t line) {
   lcd.setCursor(0, line);
   lcd.printstr(string);
