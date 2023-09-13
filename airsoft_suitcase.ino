@@ -30,6 +30,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Che
 
 // Timer
 int CD_TIME_M = 10; // default value for countdown in minutes
+char timer_buf[2];
 int last_second_counted = 0; // def last second processed
 CountDown timer; // define timer object
 char display_timer_value[16]; // define countdown timer display string to be modified
@@ -63,6 +64,12 @@ const char* EXPLOSION_STATE = "exploded_st";
 const char* DISARMED_STATE = "disarmed_st";
 const char* ADM_STATE = "adm_st";
 char* state = INIT_STATE;
+
+const char adm_opt_timer = 'T'; // alterar minutos do timer
+const char adm_opt_password = 'P'; // alterar senha. A = team A, B = Team B, C = Team C, 0 = Master
+const char adm_opt_default = 'D';
+
+char adm_opt = adm_opt_default; // adm action selected
 
 void setup() {
   // serial for debug
@@ -242,6 +249,39 @@ void process_key_input() {
   }
 }
 
+// Proccess admin state input functions
+void process_admin_key_input() {
+  input_key = keypad.getKey();
+
+  if (input_key) {
+    indicate_activity(activity_led_output);
+    switch (input_key) {
+      case '#':
+        validate_pass();
+        break;
+      case 'A':
+        //
+        break;
+      case 'B':
+        //
+        break;
+      case 'C':
+        break;
+      case 'D':
+        reset_current_password_input();
+        break;
+      default:
+        // add input to array
+        current_password[pass_count] = input_key;
+        pass_count++;
+        if (pass_count == (Password_Length -1)) {
+          validate_pass();
+        }
+        break;
+    }
+  }
+}
+
 // Process end states
 
 void process_bomb_exploded(){
@@ -321,6 +361,33 @@ void disarmed_menu(){
   process_input();
 }
 
+void admin_menu() {
+  if(adm_opt == adm_opt_default) {
+    print_line("Admin menu", 0);
+    print_line("1=Timer, 2=Pass", 1);
+    input_key = keypad.getKey();
+
+    if (input_key){
+      if (input_key == '1') {
+        adm_opt = adm_opt_timer;
+      } else if(input_key == '2') {
+        adm_opt = adm_opt_password;
+      } else {
+        adm_opt = adm_opt_default;
+      }
+      lcd.clear();
+    }
+  } else if (adm_opt == adm_opt_timer) {
+    print_line("Enter minutes:", 0);
+    process_timer_input();
+  } else if (adm_opt == adm_opt_password) {
+    
+    process_input();
+  } else {
+    reset_current_password_input();
+  }
+}
+
 void loop() {
   if (state == INIT_STATE) {
     start_menu();
@@ -332,8 +399,9 @@ void loop() {
     premature_explosion_menu();
   } else if (state == DISARMED_STATE) {
     disarmed_menu();
+  } else if (state == ADM_STATE) {
+    admin_menu();
   } else {
-    print_line(state, 0);
-    print_digit(pass_team,1, 0);
+    print_line("Reset system!", 0);
   }
 }
