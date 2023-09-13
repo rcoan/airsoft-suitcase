@@ -30,7 +30,7 @@ LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Che
 
 // Timer
 int CD_TIME_M = 10; // default value for countdown in minutes
-const int last_second_counted = 0; // def last second processed
+int last_second_counted = 0; // def last second processed
 CountDown timer; // define timer object
 char display_timer_value[16]; // define countdown timer display string to be modified
 
