@@ -29,8 +29,11 @@ Keypad keypad = Keypad(makeKeymap(NUMPAD_KEY_VALUES),
 LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Check yours.
 
 // Timer
+#define timer_length 3 // Last digit should be empty, max size is actually 2
+
 int CD_TIME_M = 10; // default value for countdown in minutes
-char timer_buf[2];
+char timer_buf[timer_length];
+byte timer_count = 0;
 int last_second_counted = 0; // def last second processed
 CountDown timer; // define timer object
 char display_timer_value[16]; // define countdown timer display string to be modified
@@ -95,6 +98,18 @@ void process_input(){
   process_key_input();
   print_line(current_password, 1);
   lcd.setCursor(pass_count, 1);
+}
+
+void process_timer_input(){
+  process_timer_key_input();
+  print_line(timer_buf, 1);
+  lcd.setCursor(timer_count, 1);
+}
+
+void reset_current_timer_input() {
+  memset(timer_buf, '\0', timer_length * sizeof(char));
+  timer_count = 0;
+  lcd.clear();
 }
 
 void indicate_activity(int pin, int duration = 50){
@@ -249,15 +264,16 @@ void process_key_input() {
   }
 }
 
-// Proccess admin state input functions
-void process_admin_key_input() {
+void process_timer_key_input() {
   input_key = keypad.getKey();
-
   if (input_key) {
     indicate_activity(activity_led_output);
     switch (input_key) {
+      case '*':
+        //
+        break;
       case '#':
-        validate_pass();
+        //
         break;
       case 'A':
         //
@@ -268,14 +284,16 @@ void process_admin_key_input() {
       case 'C':
         break;
       case 'D':
-        reset_current_password_input();
+        reset_current_timer_input();
         break;
       default:
         // add input to array
-        current_password[pass_count] = input_key;
-        pass_count++;
-        if (pass_count == (Password_Length -1)) {
-          validate_pass();
+        timer_buf[timer_count] = input_key;
+        timer_count++;
+        if (timer_count == (timer_length -1)) {
+          CD_TIME_M = (timer_buf[0]*10)+timer_buf[1]
+          reset_current_timer_input();
+          state = INIT_STATE;
         }
         break;
     }
@@ -381,7 +399,7 @@ void admin_menu() {
     print_line("Enter minutes:", 0);
     process_timer_input();
   } else if (adm_opt == adm_opt_password) {
-    
+
     process_input();
   } else {
     reset_current_password_input();
