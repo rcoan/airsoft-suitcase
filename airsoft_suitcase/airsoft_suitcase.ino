@@ -27,7 +27,7 @@ Keypad keypad = Keypad(makeKeymap(NUMPAD_KEY_VALUES),
                        NUMPAD_COLUMN_QTY);
 
 // LCD display configs
-LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Check yours.
+LiquidCrystal_I2C lcd(0x27, 20, 4); // Try 20x4 instead of 16x2
 
 // Timer
 #define timer_length 2 // Max size for 2-digit input
@@ -85,9 +85,18 @@ void setup() {
   Serial.println("Airsoft Bomb System Starting...");
 
   // LCD setup
-  lcd.backlight();
+  Serial.println("Initializing LCD...");
+  delay(1000); // Longer delay before init
   lcd.init();
-  Serial.println("LCD initialized");
+  delay(500); // Longer delay after init
+  lcd.backlight();
+  delay(100);
+  lcd.clear();
+  delay(100);
+  lcd.home();
+  lcd.print("Test LCD");
+  delay(100);
+  Serial.println("LCD initialized and test text sent");
 
   // pinout setup
   pinMode(siren_output, OUTPUT);
@@ -97,7 +106,7 @@ void setup() {
   digitalWrite(activity_led_output, LOW);
 
   // init variables
-  reset_current_password_input();
+  reset_current_password_input_no_clear();
   
   // Reset watchdog after successful setup
   wdt_reset();
@@ -141,6 +150,8 @@ void process_input(bool is_timer = false){
     lastKey = input_key;
     lastKeyPress = currentTime;
     
+    // Trigger activity LED
+    activityActive = false; // Reset to allow new activity
     indicate_activity(activity_led_output);
     handle_key_input(input_key, is_timer);
     lcdNeedsUpdate = true; // Mark for update when key is pressed
@@ -229,6 +240,13 @@ void reset_current_password_input() {
   lcdNeedsUpdate = true;
 }
 
+void reset_current_password_input_no_clear() {
+  memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
+  pass_count = 0;
+  lastPasswordDisplay = ""; // Reset cache
+  lcdNeedsUpdate = true;
+}
+
 unsigned long errorStartTime = 0;
 bool errorActive = false;
 int errorBlinkCount = 0;
@@ -282,7 +300,11 @@ void validate_pass() {
   if (strcmp(MASTER_PASSWORD, current_password) == 0) {
     Serial.println("Master password correct - entering admin mode");
     valid_pass();
-    current_state = (current_state == INIT_STATE) ? ADM_STATE : INIT_STATE;
+    if (current_state == INIT_STATE) {
+      current_state = ADM_STATE;
+    } else {
+      current_state = INIT_STATE; // Reset to initial state from any other state
+    }
   } else {
     bool found = false;
     for (int i = 0; i < 3; i++) {
@@ -354,16 +376,46 @@ void handle_key_input(char input_key, bool is_timer) {
 
 // Process end states
 
+unsigned long explosionStartTime = 0;
+bool explosionActive = false;
+
 void process_bomb_exploded(){
-  indicate_activity(siren_output, 5000);
+  explosionStartTime = millis();
+  explosionActive = true;
   current_state = EXPLOSION_STATE;
   lcd.clear();
 }
 
+void handle_explosion_siren() {
+  if (explosionActive) {
+    if (millis() - explosionStartTime < 5000) {
+      digitalWrite(siren_output, HIGH);
+    } else {
+      digitalWrite(siren_output, LOW);
+      explosionActive = false;
+    }
+  }
+}
+
+unsigned long disarmStartTime = 0;
+bool disarmActive = false;
+
 void process_disarm_bomb(){
-  indicate_activity(siren_output, 1000);
+  disarmStartTime = millis();
+  disarmActive = true;
   current_state = DISARMED_STATE;
   lcd.clear();
+}
+
+void handle_disarm_siren() {
+  if (disarmActive) {
+    if (millis() - disarmStartTime < 1000) {
+      digitalWrite(siren_output, HIGH);
+    } else {
+      digitalWrite(siren_output, LOW);
+      disarmActive = false;
+    }
+  }
 }
 
 unsigned long selfDestructStartTime = 0;
@@ -442,7 +494,19 @@ void handle_premature_explosion() {
 // journey orchestration functions
 
 void start_menu() {
-  print_line("Insira a senha:", 0);
+  static bool firstTime = true;
+  static int lastState = -1;
+  
+  // Check if we're entering this state from another state
+  if (firstTime || lastState != INIT_STATE) {
+    lcd.clear();
+    delay(10); // Small delay to ensure clear completes
+    print_line("Insira a senha:", 0);
+    lcdNeedsUpdate = true; // Force display update
+    firstTime = false;
+    lastState = INIT_STATE;
+    Serial.println("Displaying: Insira a senha:");
+  }
   process_input();
 }
 
@@ -506,11 +570,23 @@ void admin_menu() {
   }
 }
 
+void handle_activity_led_buzzer() {
+  if (activityActive) {
+    if (millis() - activityStartTime >= 50) {
+      digitalWrite(activity_led_output, LOW);
+      activityActive = false;
+    }
+  }
+}
+
 void loop() {
   // Reset watchdog timer at start of each loop
   wdt_reset();
   
   // Handle non-blocking operations
+  handle_activity_led_buzzer(); // Handle activity LED/buzzer
+  handle_explosion_siren(); // Handle explosion siren
+  handle_disarm_siren(); // Handle disarm siren
   handle_error_blinking();
   handle_self_destruct();
   handle_premature_explosion();
