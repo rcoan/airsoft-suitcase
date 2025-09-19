@@ -78,10 +78,12 @@ char adm_opt = adm_opt_default; // adm action selected
 void setup() {
   // serial for debug
   Serial.begin(9600);
+  Serial.println("Airsoft Bomb System Starting...");
 
   // LCD setup
   lcd.backlight();
   lcd.init();
+  Serial.println("LCD initialized");
 
   // pinout setup
   pinMode(siren_output, OUTPUT);
@@ -95,6 +97,12 @@ void setup() {
 }
 
 // Utils
+void indicate_activity(int pin, int duration = 50){
+  digitalWrite(pin, HIGH);
+  delay(duration);
+  digitalWrite(pin, LOW);
+}
+
 void process_input(bool is_timer = false){
   char input_key = keypad.getKey();
   if (input_key) {
@@ -115,12 +123,6 @@ void reset_current_timer_input() {
   memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
   lcd.clear();
-}
-
-void indicate_activity(int pin, int duration = 50){
-  digitalWrite(pin, HIGH);
-  delay(duration);
-  digitalWrite(pin, LOW);
 }
 
 void valid_pass(){
@@ -197,18 +199,25 @@ void invalid_pass() {
 }
 
 void validate_pass() {
+  Serial.print("Validating password: ");
+  Serial.println(current_password);
   if (strcmp(MASTER_PASSWORD, current_password) == 0) {
+    Serial.println("Master password correct - entering admin mode");
     valid_pass();
     current_state = (current_state == INIT_STATE) ? ADM_STATE : INIT_STATE;
   } else {
     bool found = false;
     for (int i = 0; i < 3; i++) {
       if (strcmp(valid_passwords[i], current_password) == 0) {
+        Serial.print("Team password correct - Team ");
+        Serial.println((char)('A' + i));
         valid_pass();
         pass_team = 'A' + i;
         if (current_state == INIT_STATE) {
+          Serial.println("Starting countdown...");
           start_countdown();
         } else if (current_state == CD_STATE) {
+          Serial.println("Bomb disarmed!");
           process_disarm_bomb();
         }
         found = true;
@@ -216,6 +225,7 @@ void validate_pass() {
       }
     }
     if (!found) {
+      Serial.println("Invalid password!");
       invalid_pass();
     }
   }
@@ -224,6 +234,8 @@ void validate_pass() {
 
 // Process input functions
 void handle_key_input(char input_key, bool is_timer) {
+  Serial.print("Key pressed: ");
+  Serial.println(input_key);
   if (is_timer) {
     switch (input_key) {
       case 'D':
