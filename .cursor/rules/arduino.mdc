@@ -1,0 +1,8 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+Arduino is installed at D:\Users\Administrador\AppData\Local\Programs\Arduino IDE
+always run the monitor in background so I can follow the logs

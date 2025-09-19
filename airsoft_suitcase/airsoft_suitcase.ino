@@ -27,7 +27,7 @@ Keypad keypad = Keypad(makeKeymap(NUMPAD_KEY_VALUES),
                        NUMPAD_COLUMN_QTY);
 
 // LCD display configs
-LiquidCrystal_I2C lcd(0x27, 20, 4); // Try 20x4 instead of 16x2
+LiquidCrystal_I2C lcd(0x27, 16, 2); // Back to 16x2
 
 // Timer
 #define timer_length 2 // Max size for 2-digit input
@@ -69,6 +69,7 @@ enum State {
   ADM_STATE
 };
 State current_state = INIT_STATE;
+bool force_start_menu_update = false;
 
 const char adm_opt_timer = 'T'; // alterar minutos do timer
 const char adm_opt_password = 'P'; // alterar senha. A = team A, B = Team B, C = Team C, 0 = Master
@@ -91,7 +92,7 @@ void setup() {
   delay(500); // Longer delay after init
   lcd.backlight();
   delay(100);
-  lcd.clear();
+  clear_lcd();
   delay(100);
   lcd.home();
   lcd.print("Test LCD");
@@ -179,7 +180,7 @@ void process_input(bool is_timer = false){
 void reset_current_timer_input() {
   memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
-  lcd.clear();
+  clear_lcd();
   lastTimerDisplay = ""; // Reset cache
   lcdNeedsUpdate = true;
 }
@@ -191,11 +192,18 @@ void valid_pass(){
 void print_line(const char* string, uint8_t line) {
   lcd.setCursor(0, line);
   lcd.printstr(string);
+  Serial.print("LCD Line "); Serial.print(line); Serial.print(": "); Serial.println(string);
 }
 
 void print_digit(char value, uint8_t line, uint8_t pos) {
   lcd.setCursor(pos, line);
   lcd.print(value);
+  Serial.print("LCD Digit at ("); Serial.print(pos); Serial.print(","); Serial.print(line); Serial.print("): "); Serial.println(value);
+}
+
+void clear_lcd() {
+  lcd.clear();
+  Serial.println("LCD: CLEARED");
 }
 
 static int lastDisplayedSeconds = -1;
@@ -235,7 +243,7 @@ void start_countdown(){
 void reset_current_password_input() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
-  lcd.clear();
+  clear_lcd();
   lastPasswordDisplay = ""; // Reset cache
   lcdNeedsUpdate = true;
 }
@@ -253,7 +261,7 @@ int errorBlinkCount = 0;
 
 void invalid_pass() {
   // print error
-  lcd.clear();
+  clear_lcd();
   print_line("Senha invalida!", 0);
   errorStartTime = millis();
   errorActive = true;
@@ -298,12 +306,15 @@ void validate_pass() {
   Serial.print("Validating password: ");
   Serial.println(current_password);
   if (strcmp(MASTER_PASSWORD, current_password) == 0) {
-    Serial.println("Master password correct - entering admin mode");
     valid_pass();
     if (current_state == INIT_STATE) {
+      Serial.println("Master password correct - entering admin mode");
       current_state = ADM_STATE;
     } else {
+      Serial.println("Master password correct - resetting to init state");
       current_state = INIT_STATE; // Reset to initial state from any other state
+      // Force LCD update by resetting the static variables in start_menu
+      reset_start_menu_state();
     }
   } else {
     bool found = false;
@@ -349,6 +360,10 @@ void handle_key_input(char input_key, bool is_timer) {
             CD_TIME_M = (timer_buf[0] - '0') * 10 + (timer_buf[1] - '0');
             reset_current_timer_input();
             current_state = INIT_STATE;
+            // Force LCD update by resetting the static variables in start_menu
+            reset_start_menu_state();
+            // Reset admin options
+            reset_admin_options();
           }
         }
         break;
@@ -383,7 +398,7 @@ void process_bomb_exploded(){
   explosionStartTime = millis();
   explosionActive = true;
   current_state = EXPLOSION_STATE;
-  lcd.clear();
+  clear_lcd();
 }
 
 void handle_explosion_siren() {
@@ -404,7 +419,7 @@ void process_disarm_bomb(){
   disarmStartTime = millis();
   disarmActive = true;
   current_state = DISARMED_STATE;
-  lcd.clear();
+  clear_lcd();
 }
 
 void handle_disarm_siren() {
@@ -423,7 +438,7 @@ int selfDestructSirenCount = 0;
 bool selfDestructActive = false;
 
 void process_self_destruct(){
-  lcd.clear();
+  clear_lcd();
   print_line("Missao falha!", 0);
   print_line("Todo time morto", 1);
   selfDestructStartTime = millis();
@@ -447,7 +462,7 @@ void handle_self_destruct() {
         if (selfDestructSirenCount >= 3) {
           selfDestructActive = false;
           digitalWrite(siren_output, LOW);
-          lcd.clear();
+          clear_lcd();
         }
       }
     }
@@ -459,7 +474,7 @@ int prematureSirenCount = 0;
 bool prematureActive = false;
 
 void process_premature_explosion() {
-  lcd.clear();
+  clear_lcd();
   prematureStartTime = millis();
   prematureSirenCount = 0;
   prematureActive = true;
@@ -493,18 +508,32 @@ void handle_premature_explosion() {
 
 // journey orchestration functions
 
+// Function to reset start_menu state variables
+void reset_start_menu_state() {
+  // We can't directly access static variables, so we'll use a global flag
+  force_start_menu_update = true;
+}
+
+// Function to reset admin options
+void reset_admin_options() {
+  adm_opt = adm_opt_default;
+  Serial.println("Admin options reset to default");
+}
+
 void start_menu() {
   static bool firstTime = true;
   static int lastState = -1;
   
-  // Check if we're entering this state from another state
-  if (firstTime || lastState != INIT_STATE) {
-    lcd.clear();
+  // Check if we're entering this state from another state or if forced update
+  if (firstTime || lastState != INIT_STATE || force_start_menu_update) {
+    Serial.println("start_menu: Display update needed");
+    clear_lcd();
     delay(10); // Small delay to ensure clear completes
     print_line("Insira a senha:", 0);
     lcdNeedsUpdate = true; // Force display update
     firstTime = false;
     lastState = INIT_STATE;
+    force_start_menu_update = false; // Reset the flag
     Serial.println("Displaying: Insira a senha:");
   }
   process_input();
@@ -558,7 +587,7 @@ void admin_menu() {
       } else {
         adm_opt = adm_opt_default;
       }
-      lcd.clear();
+      clear_lcd();
     }
   } else if (adm_opt == adm_opt_timer) {
     print_line("Enter minutes:", 0);
@@ -582,6 +611,13 @@ void handle_activity_led_buzzer() {
 void loop() {
   // Reset watchdog timer at start of each loop
   wdt_reset();
+  
+  // Simple heartbeat to show Arduino is running
+  static unsigned long lastHeartbeat = 0;
+  if (millis() - lastHeartbeat > 5000) {
+    Serial.println("Arduino running...");
+    lastHeartbeat = millis();
+  }
   
   // Handle non-blocking operations
   handle_activity_led_buzzer(); // Handle activity LED/buzzer
