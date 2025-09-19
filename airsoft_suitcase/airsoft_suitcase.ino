@@ -69,6 +69,15 @@ enum State {
   ADM_STATE
 };
 State current_state = INIT_STATE;
+
+// Alarm types
+enum AlarmType {
+  ALARM_NONE,
+  ALARM_EXPLOSION,
+  ALARM_DISARM,
+  ALARM_SELF_DESTRUCT,
+  ALARM_PREMATURE
+};
 bool force_start_menu_update = false;
 
 const char adm_opt_timer = 'T'; // alterar minutos do timer
@@ -128,15 +137,40 @@ void indicate_activity(int pin, int duration = 50){
   }
 }
 
-// LCD caching variables
-static String lastPasswordDisplay = "";
-static String lastTimerDisplay = "";
-static bool lcdNeedsUpdate = false;
+// Unified display system
+struct DisplayCache {
+  String lastPasswordDisplay = "";
+  String lastTimerDisplay = "";
+  bool needsUpdate = false;
+  int lastDisplayedSeconds = -1;
+} display;
 
-// Input debouncing
-static unsigned long lastKeyPress = 0;
-static char lastKey = '\0';
-const unsigned long DEBOUNCE_DELAY = 150; // ms
+// Unified input system
+struct InputSystem {
+  unsigned long lastKeyPress = 0;
+  char lastKey = '\0';
+  const unsigned long DEBOUNCE_DELAY = 150;
+} input;
+
+void update_display(bool is_timer = false) {
+  if (is_timer) {
+    String currentTimerDisplay = String(timer_buf);
+    if (currentTimerDisplay != display.lastTimerDisplay || display.needsUpdate) {
+      print_line(timer_buf, 1);
+      display.lastTimerDisplay = currentTimerDisplay;
+      display.needsUpdate = false;
+    }
+    lcd.setCursor(timer_count, 1);
+  } else {
+    String currentPasswordDisplay = String(current_password);
+    if (currentPasswordDisplay != display.lastPasswordDisplay || display.needsUpdate) {
+      print_line(current_password, 1);
+      display.lastPasswordDisplay = currentPasswordDisplay;
+      display.needsUpdate = false;
+    }
+    lcd.setCursor(pass_count, 1);
+  }
+}
 
 void process_input(bool is_timer = false){
   char input_key = keypad.getKey();
@@ -144,45 +178,29 @@ void process_input(bool is_timer = false){
     unsigned long currentTime = millis();
     
     // Debounce: ignore if same key pressed within debounce delay
-    if (input_key == lastKey && (currentTime - lastKeyPress) < DEBOUNCE_DELAY) {
+    if (input_key == input.lastKey && (currentTime - input.lastKeyPress) < input.DEBOUNCE_DELAY) {
       return;
     }
     
-    lastKey = input_key;
-    lastKeyPress = currentTime;
+    input.lastKey = input_key;
+    input.lastKeyPress = currentTime;
     
     // Trigger activity LED
     activityActive = false; // Reset to allow new activity
     indicate_activity(activity_led_output);
     handle_key_input(input_key, is_timer);
-    lcdNeedsUpdate = true; // Mark for update when key is pressed
+    display.needsUpdate = true; // Mark for update when key is pressed
   }
   
-  if (is_timer) {
-    String currentTimerDisplay = String(timer_buf);
-    if (currentTimerDisplay != lastTimerDisplay || lcdNeedsUpdate) {
-      print_line(timer_buf, 1);
-      lastTimerDisplay = currentTimerDisplay;
-      lcdNeedsUpdate = false;
-    }
-    lcd.setCursor(timer_count, 1);
-  } else {
-    String currentPasswordDisplay = String(current_password);
-    if (currentPasswordDisplay != lastPasswordDisplay || lcdNeedsUpdate) {
-      print_line(current_password, 1);
-      lastPasswordDisplay = currentPasswordDisplay;
-      lcdNeedsUpdate = false;
-    }
-    lcd.setCursor(pass_count, 1);
-  }
+  update_display(is_timer);
 }
 
 void reset_current_timer_input() {
   memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
   clear_lcd();
-  lastTimerDisplay = ""; // Reset cache
-  lcdNeedsUpdate = true;
+  display.lastTimerDisplay = ""; // Reset cache
+  display.needsUpdate = true;
 }
 
 void valid_pass(){
@@ -206,11 +224,9 @@ void clear_lcd() {
   Serial.println("LCD: CLEARED");
 }
 
-static int lastDisplayedSeconds = -1;
-
 void format_sec_to_print(int sec){
   // Only update display if seconds have changed
-  if (sec != lastDisplayedSeconds) {
+  if (sec != display.lastDisplayedSeconds) {
     int minutes = sec / 60;
     int sec_left = sec % 60;
     
@@ -229,7 +245,7 @@ void format_sec_to_print(int sec){
     if (sec_left < 10) Serial.print("0");
     Serial.println(sec_left);
     
-    lastDisplayedSeconds = sec;
+    display.lastDisplayedSeconds = sec;
   }
 }
 
@@ -244,28 +260,36 @@ void reset_current_password_input() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
   clear_lcd();
-  lastPasswordDisplay = ""; // Reset cache
-  lcdNeedsUpdate = true;
+  display.lastPasswordDisplay = ""; // Reset cache
+  display.needsUpdate = true;
 }
 
 void reset_current_password_input_no_clear() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
-  lastPasswordDisplay = ""; // Reset cache
-  lcdNeedsUpdate = true;
+  display.lastPasswordDisplay = ""; // Reset cache
+  display.needsUpdate = true;
 }
 
-unsigned long errorStartTime = 0;
-bool errorActive = false;
-int errorBlinkCount = 0;
+// Unified error system
+struct ErrorSystem {
+  unsigned long startTime = 0;
+  bool active = false;
+  int blinkCount = 0;
+  unsigned long lastBlink = 0;
+  bool blinkState = false;
+} error;
 
 void invalid_pass() {
   // print error
   clear_lcd();
   print_line("Senha invalida!", 0);
-  errorStartTime = millis();
-  errorActive = true;
-  errorBlinkCount = 0;
+  error.startTime = millis();
+  error.active = true;
+  error.blinkCount = 0;
+  error.lastBlink = 0;
+  error.blinkState = false;
+  
   // process error
   attempts++;
 
@@ -276,25 +300,23 @@ void invalid_pass() {
       process_premature_explosion();
     }
     attempts = 0;
-    errorActive = false;
+    error.active = false;
   }
 }
 
 void handle_error_blinking() {
-  if (errorActive && attempts < max_attempts) {
+  if (error.active && attempts < max_attempts) {
     unsigned long currentTime = millis();
-    static unsigned long lastBlink = 0;
-    static bool blinkState = false;
     
-    if (currentTime - lastBlink >= (blinkState ? 100 : 200)) {
-      digitalWrite(activity_led_output, blinkState ? LOW : HIGH);
-      blinkState = !blinkState;
-      lastBlink = currentTime;
+    if (currentTime - error.lastBlink >= (error.blinkState ? 100 : 200)) {
+      digitalWrite(activity_led_output, error.blinkState ? LOW : HIGH);
+      error.blinkState = !error.blinkState;
+      error.lastBlink = currentTime;
       
-      if (!blinkState) {
-        errorBlinkCount++;
-        if (errorBlinkCount >= (max_attempts - attempts) * 2) {
-          errorActive = false;
+      if (!error.blinkState) {
+        error.blinkCount++;
+        if (error.blinkCount >= (max_attempts - attempts) * 2) {
+          error.active = false;
           digitalWrite(activity_led_output, LOW);
         }
       }
@@ -305,41 +327,56 @@ void handle_error_blinking() {
 void validate_pass() {
   Serial.print("Validating password: ");
   Serial.println(current_password);
+  
+  // Check master password
   if (strcmp(MASTER_PASSWORD, current_password) == 0) {
-    valid_pass();
-    if (current_state == INIT_STATE) {
-      Serial.println("Master password correct - entering admin mode");
-      current_state = ADM_STATE;
-    } else {
-      Serial.println("Master password correct - resetting to init state");
-      // Force LCD update by resetting the static variables in start_menu
-      reset_start_menu_state();
-    }
+    handle_master_password();
   } else {
-    bool found = false;
-    for (int i = 0; i < 3; i++) {
-      if (strcmp(valid_passwords[i], current_password) == 0) {
-        Serial.print("Team password correct - Team ");
-        Serial.println((char)('A' + i));
-        valid_pass();
-        pass_team = 'A' + i;
-        if (current_state == INIT_STATE) {
-          Serial.println("Starting countdown...");
-          start_countdown();
-        } else if (current_state == CD_STATE) {
-          Serial.println("Bomb disarmed!");
-          process_disarm_bomb();
-        }
-        found = true;
-        break;
-      }
-    }
-    if (!found) {
+    // Check team passwords
+    int team_index = find_team_password();
+    if (team_index >= 0) {
+      handle_team_password(team_index);
+    } else {
       Serial.println("Invalid password!");
       invalid_pass();
     }
   }
   reset_current_password_input();
+}
+
+int find_team_password() {
+  for (int i = 0; i < 3; i++) {
+    if (strcmp(valid_passwords[i], current_password) == 0) {
+      return i;
+    }
+  }
+  return -1;
+}
+
+void handle_master_password() {
+  valid_pass();
+  if (current_state == INIT_STATE) {
+    Serial.println("Master password correct - entering admin mode");
+    current_state = ADM_STATE;
+  } else {
+    Serial.println("Master password correct - resetting to init state");
+    reset_start_menu_state();
+  }
+}
+
+void handle_team_password(int team_index) {
+  Serial.print("Team password correct - Team ");
+  Serial.println((char)('A' + team_index));
+  valid_pass();
+  pass_team = 'A' + team_index;
+  
+  if (current_state == INIT_STATE) {
+    Serial.println("Starting countdown...");
+    start_countdown();
+  } else if (current_state == CD_STATE) {
+    Serial.println("Bomb disarmed!");
+    process_disarm_bomb();
+  }
 }
 
 // Process input functions
@@ -387,118 +424,121 @@ void handle_key_input(char input_key, bool is_timer) {
   }
 }
 
-// Process end states
+// Unified alarm system
+struct AlarmSystem {
+  AlarmType type = ALARM_NONE;
+  unsigned long startTime = 0;
+  int count = 0;
+  bool active = false;
+  unsigned long lastSiren = 0;
+  bool sirenState = false;
+} alarm;
 
-unsigned long explosionStartTime = 0;
-bool explosionActive = false;
+void start_alarm(AlarmType type) {
+  alarm.type = type;
+  alarm.startTime = millis();
+  alarm.count = 0;
+  alarm.active = true;
+  alarm.lastSiren = 0;
+  alarm.sirenState = false;
+}
 
 void process_bomb_exploded(){
-  explosionStartTime = millis();
-  explosionActive = true;
+  start_alarm(ALARM_EXPLOSION);
   current_state = EXPLOSION_STATE;
   clear_lcd();
 }
 
-void handle_explosion_siren() {
-  if (explosionActive) {
-    if (millis() - explosionStartTime < 5000) {
-      digitalWrite(siren_output, HIGH);
-    } else {
-      digitalWrite(siren_output, LOW);
-      explosionActive = false;
-    }
-  }
-}
-
-unsigned long disarmStartTime = 0;
-bool disarmActive = false;
-
 void process_disarm_bomb(){
-  disarmStartTime = millis();
-  disarmActive = true;
+  start_alarm(ALARM_DISARM);
   current_state = DISARMED_STATE;
   clear_lcd();
 }
-
-void handle_disarm_siren() {
-  if (disarmActive) {
-    if (millis() - disarmStartTime < 1000) {
-      digitalWrite(siren_output, HIGH);
-    } else {
-      digitalWrite(siren_output, LOW);
-      disarmActive = false;
-    }
-  }
-}
-
-unsigned long selfDestructStartTime = 0;
-int selfDestructSirenCount = 0;
-bool selfDestructActive = false;
 
 void process_self_destruct(){
   clear_lcd();
   print_line("Missao falha!", 0);
   print_line("Todo time morto", 1);
-  selfDestructStartTime = millis();
-  selfDestructSirenCount = 0;
-  selfDestructActive = true;
+  start_alarm(ALARM_SELF_DESTRUCT);
 }
-
-void handle_self_destruct() {
-  if (selfDestructActive) {
-    unsigned long currentTime = millis();
-    static unsigned long lastSiren = 0;
-    static bool sirenState = false;
-    
-    if (currentTime - lastSiren >= (sirenState ? 100 : 1000)) {
-      digitalWrite(siren_output, sirenState ? LOW : HIGH);
-      sirenState = !sirenState;
-      lastSiren = currentTime;
-      
-      if (!sirenState) {
-        selfDestructSirenCount++;
-        if (selfDestructSirenCount >= 3) {
-          selfDestructActive = false;
-          digitalWrite(siren_output, LOW);
-          clear_lcd();
-        }
-      }
-    }
-  }
-}
-
-unsigned long prematureStartTime = 0;
-int prematureSirenCount = 0;
-bool prematureActive = false;
 
 void process_premature_explosion() {
   clear_lcd();
-  prematureStartTime = millis();
-  prematureSirenCount = 0;
-  prematureActive = true;
+  start_alarm(ALARM_PREMATURE);
   current_state = PREMATURE_EXPLOSION_STATE;
 }
 
-void handle_premature_explosion() {
-  if (prematureActive) {
-    unsigned long currentTime = millis();
-    static unsigned long lastSiren = 0;
-    static bool sirenState = false;
-    
-    int sirenDuration = (prematureSirenCount < 2) ? 1000 : 3000;
-    int pauseDuration = 100;
-    
-    if (currentTime - lastSiren >= (sirenState ? pauseDuration : sirenDuration)) {
-      digitalWrite(siren_output, sirenState ? LOW : HIGH);
-      sirenState = !sirenState;
-      lastSiren = currentTime;
+void handle_alarm() {
+  if (!alarm.active) return;
+  
+  unsigned long currentTime = millis();
+  bool shouldSiren = false;
+  int sirenDuration, pauseDuration;
+  
+  switch (alarm.type) {
+    case ALARM_EXPLOSION:
+      if (currentTime - alarm.startTime < 5000) {
+        shouldSiren = true;
+        sirenDuration = 5000;
+        pauseDuration = 0;
+      } else {
+        alarm.active = false;
+        digitalWrite(siren_output, LOW);
+        return;
+      }
+      break;
       
-      if (!sirenState) {
-        prematureSirenCount++;
-        if (prematureSirenCount >= 3) {
-          prematureActive = false;
-          digitalWrite(siren_output, LOW);
-        }
+    case ALARM_DISARM:
+      if (currentTime - alarm.startTime < 1000) {
+        shouldSiren = true;
+        sirenDuration = 1000;
+        pauseDuration = 0;
+      } else {
+        alarm.active = false;
+        digitalWrite(siren_output, LOW);
+        return;
+      }
+      break;
+      
+    case ALARM_SELF_DESTRUCT:
+      sirenDuration = 1000;
+      pauseDuration = 100;
+      if (alarm.count < 3) {
+        shouldSiren = true;
+      } else {
+        alarm.active = false;
+        digitalWrite(siren_output, LOW);
+        clear_lcd();
+        return;
+      }
+      break;
+      
+    case ALARM_PREMATURE:
+      sirenDuration = (alarm.count < 2) ? 1000 : 3000;
+      pauseDuration = 100;
+      if (alarm.count < 3) {
+        shouldSiren = true;
+      } else {
+        alarm.active = false;
+        digitalWrite(siren_output, LOW);
+        return;
+      }
+      break;
+      
+    default:
+      alarm.active = false;
+      return;
+  }
+  
+  if (shouldSiren) {
+    int cycleTime = alarm.sirenState ? pauseDuration : sirenDuration;
+    if (currentTime - alarm.lastSiren >= cycleTime) {
+      digitalWrite(siren_output, alarm.sirenState ? LOW : HIGH);
+      alarm.sirenState = !alarm.sirenState;
+      alarm.lastSiren = currentTime;
+      
+      if (!alarm.sirenState) {
+        alarm.count++;
       }
     }
   }
@@ -529,7 +569,7 @@ void start_menu() {
     clear_lcd();
     delay(10); // Small delay to ensure clear completes
     print_line("Insira a senha:", 0);
-    lcdNeedsUpdate = true; // Force display update
+    display.needsUpdate = true; // Force display update
     firstTime = false;
     lastState = INIT_STATE;
     force_start_menu_update = false; // Reset the flag
@@ -553,23 +593,22 @@ void countdown_menu(){
   }
 }
 
-void exploded_menu(){
-  print_line("BOOOM! Senha:", 0);
+void show_status_menu(const char* message) {
+  print_line(message, 0);
   print_digit(pass_team, 0, 14);
   process_input();
 }
 
+void exploded_menu(){
+  show_status_menu("BOOOM! Senha:");
+}
 
 void premature_explosion_menu(){
-  print_line("Ooops! Senha:", 0);
-  print_digit(pass_team, 0, 14);
-  process_input();
+  show_status_menu("Ooops! Senha:");
 }
 
 void disarmed_menu(){
-  print_line("Desarmada!", 0);
-  print_digit(pass_team, 0, 14);
-  process_input();
+  show_status_menu("Desarmada!");
 }
 
 void admin_menu() {
@@ -598,63 +637,63 @@ void admin_menu() {
     print_line("Enter minutes:", 0);
     process_input(true);
   } else if (adm_opt == adm_opt_password) {
-    // Simple password reset: collect 6 digits, then A/B/C for team
-    print_line("Insert pass", 0);
+    handle_admin_password_input();
+  } else {
+    reset_current_password_input();
+  }
+}
+
+void handle_admin_password_input() {
+  print_line("Insert pass", 0);
+  
+  char input_key = keypad.getKey();
+  if (input_key) {
+    // Use unified input system for debouncing
+    unsigned long currentTime = millis();
     
-    char input_key = keypad.getKey();
-    if (input_key) {
-      // Debounce
-      static unsigned long lastKeyPress = 0;
-      static char lastKey = '\0';
-      const unsigned long DEBOUNCE_DELAY = 150;
-      unsigned long currentTime = millis();
-      
-      if (input_key == lastKey && (currentTime - lastKeyPress) < DEBOUNCE_DELAY) {
-        return;
+    if (input_key == input.lastKey && (currentTime - input.lastKeyPress) < input.DEBOUNCE_DELAY) {
+      return;
+    }
+    
+    input.lastKey = input_key;
+    input.lastKeyPress = currentTime;
+    
+    // Trigger activity LED
+    activityActive = false;
+    indicate_activity(activity_led_output);
+    
+    if (input_key >= '0' && input_key <= '9' || input_key == '*') {
+      // Collect password digits
+      if (pass_count < Password_Length) {
+        current_password[pass_count] = input_key;
+        pass_count++;
+        print_line(current_password, 1);
+        lcd.setCursor(pass_count, 1);
       }
-      
-      lastKey = input_key;
-      lastKeyPress = currentTime;
-      
-      // Trigger activity LED
-      activityActive = false;
-      indicate_activity(activity_led_output);
-      
-      if (input_key >= '0' && input_key <= '9' || input_key == '*') {
-        // Collect password digits
-        if (pass_count < Password_Length) {
-          current_password[pass_count] = input_key;
-          pass_count++;
-          print_line(current_password, 1);
-          lcd.setCursor(pass_count, 1);
-        }
-      } else if (input_key == 'A' || input_key == 'B' || input_key == 'C') {
-        // Team selection - save password
-        if (pass_count == Password_Length) {
-          int team_index = input_key - 'A';
-          strcpy(valid_passwords[team_index], current_password);
-          
-          Serial.print("Password updated for Team ");
-          Serial.print(input_key);
-          Serial.print(": ");
-          Serial.println(valid_passwords[team_index]);
-          
-          // Reset and return to admin menu
-          reset_current_password_input();
-          adm_opt = adm_opt_default;
-          clear_lcd();
-          print_line("Password updated!", 0);
-          delay(2000);
-        }
-      } else if (input_key == 'D') {
-        // Cancel
+    } else if (input_key == 'A' || input_key == 'B' || input_key == 'C') {
+      // Team selection - save password
+      if (pass_count == Password_Length) {
+        int team_index = input_key - 'A';
+        strcpy(valid_passwords[team_index], current_password);
+        
+        Serial.print("Password updated for Team ");
+        Serial.print(input_key);
+        Serial.print(": ");
+        Serial.println(valid_passwords[team_index]);
+        
+        // Reset and return to admin menu
         reset_current_password_input();
         adm_opt = adm_opt_default;
         clear_lcd();
+        print_line("Password updated!", 0);
+        delay(2000);
       }
+    } else if (input_key == 'D') {
+      // Cancel
+      reset_current_password_input();
+      adm_opt = adm_opt_default;
+      clear_lcd();
     }
-  } else {
-    reset_current_password_input();
   }
 }
 
@@ -680,11 +719,8 @@ void loop() {
   
   // Handle non-blocking operations
   handle_activity_led_buzzer(); // Handle activity LED/buzzer
-  handle_explosion_siren(); // Handle explosion siren
-  handle_disarm_siren(); // Handle disarm siren
+  handle_alarm(); // Handle all alarm types
   handle_error_blinking();
-  handle_self_destruct();
-  handle_premature_explosion();
   
   switch (current_state) {
     case INIT_STATE:
