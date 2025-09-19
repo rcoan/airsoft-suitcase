@@ -312,7 +312,6 @@ void validate_pass() {
       current_state = ADM_STATE;
     } else {
       Serial.println("Master password correct - resetting to init state");
-      current_state = INIT_STATE; // Reset to initial state from any other state
       // Force LCD update by resetting the static variables in start_menu
       reset_start_menu_state();
     }
@@ -359,7 +358,6 @@ void handle_key_input(char input_key, bool is_timer) {
           if (timer_count == timer_length) {
             CD_TIME_M = (timer_buf[0] - '0') * 10 + (timer_buf[1] - '0');
             reset_current_timer_input();
-            current_state = INIT_STATE;
             // Force LCD update by resetting the static variables in start_menu
             reset_start_menu_state();
             // Reset admin options
@@ -510,6 +508,7 @@ void handle_premature_explosion() {
 
 // Function to reset start_menu state variables
 void reset_start_menu_state() {
+  current_state = INIT_STATE;
   // We can't directly access static variables, so we'll use a global flag
   force_start_menu_update = true;
 }
@@ -587,7 +586,6 @@ void admin_menu() {
         reset_current_password_input();
       } else if(input_key == '#') {
         // Exit admin mode and return to init state
-        current_state = INIT_STATE;
         reset_current_password_input();
         reset_start_menu_state();
         Serial.println("Exiting admin mode - returning to init state");
