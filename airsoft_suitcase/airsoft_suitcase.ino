@@ -29,27 +29,26 @@ Keypad keypad = Keypad(makeKeymap(NUMPAD_KEY_VALUES),
 LiquidCrystal_I2C lcd(0x27, 16, 2); // First param depends on the lcd model. Check yours.
 
 // Timer
-#define timer_length 3 // Last digit should be empty, max size is actually 2
+#define timer_length 2 // Max size for 2-digit input
 
 int CD_TIME_M = 10; // default value for countdown in minutes
-char timer_buf[timer_length];
+char timer_buf[timer_length + 1]; // +1 for null terminator
 byte timer_count = 0;
 int last_second_counted = 0; // def last second processed
 CountDown timer; // define timer object
 char display_timer_value[16]; // define countdown timer display string to be modified
 
 // password related
-#define Password_Length 7 // Last digit should be empty, max size is actually 6
+#define Password_Length 6 // Max size for 6-digit passwords
 
-char MASTER_PASSWORD[Password_Length] = "*5456*";
-char valid_passwords[3][Password_Length] = {
+char MASTER_PASSWORD[Password_Length + 1] = "*5456*";
+char valid_passwords[3][Password_Length + 1] = {
   "123456", // Team A
   "987654", // Team B
   "741852"  // Team C
 };
 
-char current_password[Password_Length]; // current password being entered
-char input_key; // last key entered
+char current_password[Password_Length + 1]; // current password being entered
 byte pass_count = 0; // amount of digits in the current password array
 int attempts = 0; // failed attempts since last reset
 const int max_attempts = 3; // maximum of attempts before action required
@@ -60,13 +59,15 @@ int siren_output = 12;
 int activity_led_output = 13;
 
 // App states configs
-const char* INIT_STATE = "init_st";
-const char* CD_STATE = "cd_st";
-const char* PREMATURE_EXPLOSION_STATE = "pe_st";
-const char* EXPLOSION_STATE = "exploded_st";
-const char* DISARMED_STATE = "disarmed_st";
-const char* ADM_STATE = "adm_st";
-char* state = INIT_STATE;
+enum State {
+  INIT_STATE,
+  CD_STATE,
+  PREMATURE_EXPLOSION_STATE,
+  EXPLOSION_STATE,
+  DISARMED_STATE,
+  ADM_STATE
+};
+State current_state = INIT_STATE;
 
 const char adm_opt_timer = 'T'; // alterar minutos do timer
 const char adm_opt_password = 'P'; // alterar senha. A = team A, B = Team B, C = Team C, 0 = Master
@@ -94,20 +95,24 @@ void setup() {
 }
 
 // Utils
-void process_input(){
-  process_key_input();
-  print_line(current_password, 1);
-  lcd.setCursor(pass_count, 1);
-}
-
-void process_timer_input(){
-  process_timer_key_input();
-  print_line(timer_buf, 1);
-  lcd.setCursor(timer_count, 1);
+void process_input(bool is_timer = false){
+  char input_key = keypad.getKey();
+  if (input_key) {
+    indicate_activity(activity_led_output);
+    handle_key_input(input_key, is_timer);
+  }
+  
+  if (is_timer) {
+    print_line(timer_buf, 1);
+    lcd.setCursor(timer_count, 1);
+  } else {
+    print_line(current_password, 1);
+    lcd.setCursor(pass_count, 1);
+  }
 }
 
 void reset_current_timer_input() {
-  memset(timer_buf, '\0', timer_length * sizeof(char));
+  memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
   lcd.clear();
 }
@@ -133,36 +138,34 @@ void print_digit(char value, uint8_t line, uint8_t pos) {
 }
 
 void format_sec_to_print(int sec){
-  int minutes = sec/60;
-  int sec_left = sec-(minutes*60);
-  String start_txt = String("Ativacao: ");
-  String minutes_only;
-  if(minutes < 10) {
-    minutes_only = String(start_txt + String("0") + minutes);
-  } else {
-    minutes_only = String(start_txt + minutes);
-  }
-  String minutes_only_formatted = String(minutes_only + ":");
-  String minutes_sec;
-  if(sec_left < 10) {
-    minutes_sec = String(minutes_only_formatted + "0" + sec_left);
-  } else {
-    minutes_sec = String(minutes_only_formatted + sec_left);
-  }
-  int size = minutes_sec.length() + 1;
-  minutes_sec.toCharArray(display_timer_value, size);
-  Serial.println(display_timer_value);
+  int minutes = sec / 60;
+  int sec_left = sec % 60;
+  
+  lcd.setCursor(0, 0);
+  lcd.print("Ativacao: ");
+  if (minutes < 10) lcd.print("0");
+  lcd.print(minutes);
+  lcd.print(":");
+  if (sec_left < 10) lcd.print("0");
+  lcd.print(sec_left);
+  
+  Serial.print("Ativacao: ");
+  if (minutes < 10) Serial.print("0");
+  Serial.print(minutes);
+  Serial.print(":");
+  if (sec_left < 10) Serial.print("0");
+  Serial.println(sec_left);
 }
 
 // countdown
 void start_countdown(){
-  state = CD_STATE;
+  current_state = CD_STATE;
   timer.start(0, 0, CD_TIME_M, 0);
 }
 
 // Password functions
 void reset_current_password_input() {
-  memset(current_password, '\0', Password_Length * sizeof(char));
+  memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
   lcd.clear();
 }
@@ -173,13 +176,13 @@ void invalid_pass() {
   print_line("Senha invalida!", 0);
   indicate_activity(activity_led_output, 2000);
   lcd.clear();
-  // proccess error
+  // process error
   attempts++;
 
   if(attempts >= max_attempts) {
-    if(state == INIT_STATE) {
+    if(current_state == INIT_STATE) {
       process_self_destruct();
-    } else if(state == CD_STATE) {
+    } else if(current_state == CD_STATE) {
       process_premature_explosion();
     }
     attempts = 0;
@@ -194,106 +197,65 @@ void invalid_pass() {
 }
 
 void validate_pass() {
-  if (!strcmp(MASTER_PASSWORD, current_password)) {
+  if (strcmp(MASTER_PASSWORD, current_password) == 0) {
     valid_pass();
-    if (state == INIT_STATE){
-      state = ADM_STATE;
-    } else {
-      state = INIT_STATE;
-    }
-  } else if (!strcmp(valid_passwords[0], current_password)) {
-    valid_pass();
-    pass_team = 'A';
-    if (state == INIT_STATE) {
-      start_countdown();
-    } else if(state == CD_STATE) {
-      process_disarm_bomb();
-    }
-  } else if (!strcmp(valid_passwords[1], current_password)) {
-    valid_pass();
-    pass_team = 'B';
-    if (state == INIT_STATE) {
-      start_countdown();
-    } else if(state == CD_STATE) {
-      process_disarm_bomb();
-    }
-  } else if (!strcmp(valid_passwords[2], current_password)) {
-    valid_pass();
-    pass_team = 'C';
-    if (state == INIT_STATE) {
-      start_countdown();
-    } else if(state == CD_STATE) {
-      process_disarm_bomb();
-    }
+    current_state = (current_state == INIT_STATE) ? ADM_STATE : INIT_STATE;
   } else {
-    invalid_pass();
+    bool found = false;
+    for (int i = 0; i < 3; i++) {
+      if (strcmp(valid_passwords[i], current_password) == 0) {
+        valid_pass();
+        pass_team = 'A' + i;
+        if (current_state == INIT_STATE) {
+          start_countdown();
+        } else if (current_state == CD_STATE) {
+          process_disarm_bomb();
+        }
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      invalid_pass();
+    }
   }
   reset_current_password_input();
 }
 
-// Proccess input functions
-void process_key_input() {
-  input_key = keypad.getKey();
-
-  if (input_key) {
-    indicate_activity(activity_led_output);
+// Process input functions
+void handle_key_input(char input_key, bool is_timer) {
+  if (is_timer) {
+    switch (input_key) {
+      case 'D':
+        reset_current_timer_input();
+        break;
+      default:
+        if (input_key >= '0' && input_key <= '9') {
+          timer_buf[timer_count] = input_key;
+          timer_count++;
+          if (timer_count == timer_length) {
+            CD_TIME_M = (timer_buf[0] - '0') * 10 + (timer_buf[1] - '0');
+            reset_current_timer_input();
+            current_state = INIT_STATE;
+          }
+        }
+        break;
+    }
+  } else {
     switch (input_key) {
       case '#':
         validate_pass();
-        break;
-      case 'A':
-        //
-        break;
-      case 'B':
-        //
-        break;
-      case 'C':
         break;
       case 'D':
         reset_current_password_input();
         break;
       default:
-        // add input to array
-        current_password[pass_count] = input_key;
-        pass_count++;
-        if (pass_count == (Password_Length -1)) {
-          validate_pass();
-        }
-        break;
-    }
-  }
-}
-
-void process_timer_key_input() {
-  input_key = keypad.getKey();
-  if (input_key) {
-    indicate_activity(activity_led_output);
-    switch (input_key) {
-      case '*':
-        //
-        break;
-      case '#':
-        //
-        break;
-      case 'A':
-        //
-        break;
-      case 'B':
-        //
-        break;
-      case 'C':
-        break;
-      case 'D':
-        reset_current_timer_input();
-        break;
-      default:
-        // add input to array
-        timer_buf[timer_count] = input_key;
-        timer_count++;
-        if (timer_count == (timer_length -1)) {
-          CD_TIME_M = (timer_buf[0]*10)+timer_buf[1];
-          reset_current_timer_input();
-          state = INIT_STATE;
+        if (input_key >= '0' && input_key <= '9' || input_key == '*') {
+          current_password[pass_count] = input_key;
+          pass_count++;
+          if (pass_count == Password_Length) {
+            validate_pass();
+          }
         }
         break;
     }
@@ -304,13 +266,13 @@ void process_timer_key_input() {
 
 void process_bomb_exploded(){
   indicate_activity(siren_output, 5000);
-  state = EXPLOSION_STATE;
+  current_state = EXPLOSION_STATE;
   lcd.clear();
 }
 
 void process_disarm_bomb(){
   indicate_activity(siren_output, 1000);
-  state = DISARMED_STATE;
+  current_state = DISARMED_STATE;
   lcd.clear();
 }
 
@@ -334,7 +296,7 @@ void process_premature_explosion() {
   indicate_activity(siren_output, 1000);
   delay(100);
   indicate_activity(siren_output, 3000);
-  state = PREMATURE_EXPLOSION_STATE;
+  current_state = PREMATURE_EXPLOSION_STATE;
 }
 
 // journey orchestration functions
@@ -347,7 +309,6 @@ void start_menu() {
 void countdown_menu(){
   int seconds_left = timer.remaining();
   format_sec_to_print(seconds_left);
-  print_line(display_timer_value, 0);
   process_input();
 
   if(last_second_counted != seconds_left) {
@@ -383,7 +344,7 @@ void admin_menu() {
   if(adm_opt == adm_opt_default) {
     print_line("Admin menu", 0);
     print_line("1=Timer, 2=Pass", 1);
-    input_key = keypad.getKey();
+    char input_key = keypad.getKey();
 
     if (input_key){
       if (input_key == '1') {
@@ -397,9 +358,8 @@ void admin_menu() {
     }
   } else if (adm_opt == adm_opt_timer) {
     print_line("Enter minutes:", 0);
-    process_timer_input();
+    process_input(true);
   } else if (adm_opt == adm_opt_password) {
-
     process_input();
   } else {
     reset_current_password_input();
@@ -407,19 +367,27 @@ void admin_menu() {
 }
 
 void loop() {
-  if (state == INIT_STATE) {
-    start_menu();
-  } else if (state == CD_STATE){
-    countdown_menu();
-  } else if (state == EXPLOSION_STATE) {
-    exploded_menu();
-  } else if (state == PREMATURE_EXPLOSION_STATE) {
-    premature_explosion_menu();
-  } else if (state == DISARMED_STATE) {
-    disarmed_menu();
-  } else if (state == ADM_STATE) {
-    admin_menu();
-  } else {
-    print_line("Reset system!", 0);
+  switch (current_state) {
+    case INIT_STATE:
+      start_menu();
+      break;
+    case CD_STATE:
+      countdown_menu();
+      break;
+    case EXPLOSION_STATE:
+      exploded_menu();
+      break;
+    case PREMATURE_EXPLOSION_STATE:
+      premature_explosion_menu();
+      break;
+    case DISARMED_STATE:
+      disarmed_menu();
+      break;
+    case ADM_STATE:
+      admin_menu();
+      break;
+    default:
+      print_line("Reset system!", 0);
+      break;
   }
 }
