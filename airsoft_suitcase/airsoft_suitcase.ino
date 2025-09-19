@@ -584,6 +584,13 @@ void admin_menu() {
         adm_opt = adm_opt_timer;
       } else if(input_key == '2') {
         adm_opt = adm_opt_password;
+        reset_current_password_input();
+      } else if(input_key == '#') {
+        // Exit admin mode and return to init state
+        current_state = INIT_STATE;
+        reset_current_password_input();
+        reset_start_menu_state();
+        Serial.println("Exiting admin mode - returning to init state");
       } else {
         adm_opt = adm_opt_default;
       }
@@ -593,7 +600,61 @@ void admin_menu() {
     print_line("Enter minutes:", 0);
     process_input(true);
   } else if (adm_opt == adm_opt_password) {
-    process_input();
+    // Simple password reset: collect 6 digits, then A/B/C for team
+    print_line("Insert pass", 0);
+    
+    char input_key = keypad.getKey();
+    if (input_key) {
+      // Debounce
+      static unsigned long lastKeyPress = 0;
+      static char lastKey = '\0';
+      const unsigned long DEBOUNCE_DELAY = 150;
+      unsigned long currentTime = millis();
+      
+      if (input_key == lastKey && (currentTime - lastKeyPress) < DEBOUNCE_DELAY) {
+        return;
+      }
+      
+      lastKey = input_key;
+      lastKeyPress = currentTime;
+      
+      // Trigger activity LED
+      activityActive = false;
+      indicate_activity(activity_led_output);
+      
+      if (input_key >= '0' && input_key <= '9' || input_key == '*') {
+        // Collect password digits
+        if (pass_count < Password_Length) {
+          current_password[pass_count] = input_key;
+          pass_count++;
+          print_line(current_password, 1);
+          lcd.setCursor(pass_count, 1);
+        }
+      } else if (input_key == 'A' || input_key == 'B' || input_key == 'C') {
+        // Team selection - save password
+        if (pass_count == Password_Length) {
+          int team_index = input_key - 'A';
+          strcpy(valid_passwords[team_index], current_password);
+          
+          Serial.print("Password updated for Team ");
+          Serial.print(input_key);
+          Serial.print(": ");
+          Serial.println(valid_passwords[team_index]);
+          
+          // Reset and return to admin menu
+          reset_current_password_input();
+          adm_opt = adm_opt_default;
+          clear_lcd();
+          print_line("Password updated!", 0);
+          delay(2000);
+        }
+      } else if (input_key == 'D') {
+        // Cancel
+        reset_current_password_input();
+        adm_opt = adm_opt_default;
+        clear_lcd();
+      }
+    }
   } else {
     reset_current_password_input();
   }
