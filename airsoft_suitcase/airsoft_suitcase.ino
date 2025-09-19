@@ -3,6 +3,7 @@
 #include <LiquidCrystal_I2C.h>  // custom lib to deal with lcd i2c
 #include <Keypad.h>             // Lib to handle numpad inputs
 #include <CountDown.h>          // Lib to handle timer
+#include <avr/wdt.h>            // Watchdog timer
 
 // System Definitions
 
@@ -76,6 +77,9 @@ const char adm_opt_default = 'D';
 char adm_opt = adm_opt_default; // adm action selected
 
 void setup() {
+  // Enable watchdog timer (8 second timeout)
+  wdt_enable(WDTO_8S);
+  
   // serial for debug
   Serial.begin(9600);
   Serial.println("Airsoft Bomb System Starting...");
@@ -94,27 +98,69 @@ void setup() {
 
   // init variables
   reset_current_password_input();
+  
+  // Reset watchdog after successful setup
+  wdt_reset();
 }
 
 // Utils
+unsigned long activityStartTime = 0;
+bool activityActive = false;
+
 void indicate_activity(int pin, int duration = 50){
-  digitalWrite(pin, HIGH);
-  delay(duration);
-  digitalWrite(pin, LOW);
+  if (!activityActive) {
+    digitalWrite(pin, HIGH);
+    activityStartTime = millis();
+    activityActive = true;
+  } else if (millis() - activityStartTime >= duration) {
+    digitalWrite(pin, LOW);
+    activityActive = false;
+  }
 }
+
+// LCD caching variables
+static String lastPasswordDisplay = "";
+static String lastTimerDisplay = "";
+static bool lcdNeedsUpdate = false;
+
+// Input debouncing
+static unsigned long lastKeyPress = 0;
+static char lastKey = '\0';
+const unsigned long DEBOUNCE_DELAY = 150; // ms
 
 void process_input(bool is_timer = false){
   char input_key = keypad.getKey();
   if (input_key) {
+    unsigned long currentTime = millis();
+    
+    // Debounce: ignore if same key pressed within debounce delay
+    if (input_key == lastKey && (currentTime - lastKeyPress) < DEBOUNCE_DELAY) {
+      return;
+    }
+    
+    lastKey = input_key;
+    lastKeyPress = currentTime;
+    
     indicate_activity(activity_led_output);
     handle_key_input(input_key, is_timer);
+    lcdNeedsUpdate = true; // Mark for update when key is pressed
   }
   
   if (is_timer) {
-    print_line(timer_buf, 1);
+    String currentTimerDisplay = String(timer_buf);
+    if (currentTimerDisplay != lastTimerDisplay || lcdNeedsUpdate) {
+      print_line(timer_buf, 1);
+      lastTimerDisplay = currentTimerDisplay;
+      lcdNeedsUpdate = false;
+    }
     lcd.setCursor(timer_count, 1);
   } else {
-    print_line(current_password, 1);
+    String currentPasswordDisplay = String(current_password);
+    if (currentPasswordDisplay != lastPasswordDisplay || lcdNeedsUpdate) {
+      print_line(current_password, 1);
+      lastPasswordDisplay = currentPasswordDisplay;
+      lcdNeedsUpdate = false;
+    }
     lcd.setCursor(pass_count, 1);
   }
 }
@@ -123,13 +169,15 @@ void reset_current_timer_input() {
   memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
   lcd.clear();
+  lastTimerDisplay = ""; // Reset cache
+  lcdNeedsUpdate = true;
 }
 
 void valid_pass(){
   attempts = 0;
 }
 
-void print_line(char* string, uint8_t line) {
+void print_line(const char* string, uint8_t line) {
   lcd.setCursor(0, line);
   lcd.printstr(string);
 }
@@ -139,24 +187,31 @@ void print_digit(char value, uint8_t line, uint8_t pos) {
   lcd.print(value);
 }
 
+static int lastDisplayedSeconds = -1;
+
 void format_sec_to_print(int sec){
-  int minutes = sec / 60;
-  int sec_left = sec % 60;
-  
-  lcd.setCursor(0, 0);
-  lcd.print("Ativacao: ");
-  if (minutes < 10) lcd.print("0");
-  lcd.print(minutes);
-  lcd.print(":");
-  if (sec_left < 10) lcd.print("0");
-  lcd.print(sec_left);
-  
-  Serial.print("Ativacao: ");
-  if (minutes < 10) Serial.print("0");
-  Serial.print(minutes);
-  Serial.print(":");
-  if (sec_left < 10) Serial.print("0");
-  Serial.println(sec_left);
+  // Only update display if seconds have changed
+  if (sec != lastDisplayedSeconds) {
+    int minutes = sec / 60;
+    int sec_left = sec % 60;
+    
+    lcd.setCursor(0, 0);
+    lcd.print("Ativacao: ");
+    if (minutes < 10) lcd.print("0");
+    lcd.print(minutes);
+    lcd.print(":");
+    if (sec_left < 10) lcd.print("0");
+    lcd.print(sec_left);
+    
+    Serial.print("Ativacao: ");
+    if (minutes < 10) Serial.print("0");
+    Serial.print(minutes);
+    Serial.print(":");
+    if (sec_left < 10) Serial.print("0");
+    Serial.println(sec_left);
+    
+    lastDisplayedSeconds = sec;
+  }
 }
 
 // countdown
@@ -170,14 +225,21 @@ void reset_current_password_input() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
   lcd.clear();
+  lastPasswordDisplay = ""; // Reset cache
+  lcdNeedsUpdate = true;
 }
+
+unsigned long errorStartTime = 0;
+bool errorActive = false;
+int errorBlinkCount = 0;
 
 void invalid_pass() {
   // print error
   lcd.clear();
   print_line("Senha invalida!", 0);
-  indicate_activity(activity_led_output, 2000);
-  lcd.clear();
+  errorStartTime = millis();
+  errorActive = true;
+  errorBlinkCount = 0;
   // process error
   attempts++;
 
@@ -188,12 +250,28 @@ void invalid_pass() {
       process_premature_explosion();
     }
     attempts = 0;
-  } else {
-    // blink number of attempts
-    for(int i = 0; i < max_attempts-attempts; i++){
-      delay(200);
-      indicate_activity(activity_led_output);
-      delay(100);
+    errorActive = false;
+  }
+}
+
+void handle_error_blinking() {
+  if (errorActive && attempts < max_attempts) {
+    unsigned long currentTime = millis();
+    static unsigned long lastBlink = 0;
+    static bool blinkState = false;
+    
+    if (currentTime - lastBlink >= (blinkState ? 100 : 200)) {
+      digitalWrite(activity_led_output, blinkState ? LOW : HIGH);
+      blinkState = !blinkState;
+      lastBlink = currentTime;
+      
+      if (!blinkState) {
+        errorBlinkCount++;
+        if (errorBlinkCount >= (max_attempts - attempts) * 2) {
+          errorActive = false;
+          digitalWrite(activity_led_output, LOW);
+        }
+      }
     }
   }
 }
@@ -288,27 +366,77 @@ void process_disarm_bomb(){
   lcd.clear();
 }
 
+unsigned long selfDestructStartTime = 0;
+int selfDestructSirenCount = 0;
+bool selfDestructActive = false;
+
 void process_self_destruct(){
   lcd.clear();
   print_line("Missao falha!", 0);
   print_line("Todo time morto", 1);
-  indicate_activity(siren_output, 1000);
-  delay(100);
-  indicate_activity(siren_output, 1000);
-  delay(100);
-  indicate_activity(siren_output, 1000);
-  delay(100);
-  lcd.clear();
+  selfDestructStartTime = millis();
+  selfDestructSirenCount = 0;
+  selfDestructActive = true;
 }
+
+void handle_self_destruct() {
+  if (selfDestructActive) {
+    unsigned long currentTime = millis();
+    static unsigned long lastSiren = 0;
+    static bool sirenState = false;
+    
+    if (currentTime - lastSiren >= (sirenState ? 100 : 1000)) {
+      digitalWrite(siren_output, sirenState ? LOW : HIGH);
+      sirenState = !sirenState;
+      lastSiren = currentTime;
+      
+      if (!sirenState) {
+        selfDestructSirenCount++;
+        if (selfDestructSirenCount >= 3) {
+          selfDestructActive = false;
+          digitalWrite(siren_output, LOW);
+          lcd.clear();
+        }
+      }
+    }
+  }
+}
+
+unsigned long prematureStartTime = 0;
+int prematureSirenCount = 0;
+bool prematureActive = false;
 
 void process_premature_explosion() {
   lcd.clear();
-  indicate_activity(siren_output, 1000);
-  delay(100);
-  indicate_activity(siren_output, 1000);
-  delay(100);
-  indicate_activity(siren_output, 3000);
+  prematureStartTime = millis();
+  prematureSirenCount = 0;
+  prematureActive = true;
   current_state = PREMATURE_EXPLOSION_STATE;
+}
+
+void handle_premature_explosion() {
+  if (prematureActive) {
+    unsigned long currentTime = millis();
+    static unsigned long lastSiren = 0;
+    static bool sirenState = false;
+    
+    int sirenDuration = (prematureSirenCount < 2) ? 1000 : 3000;
+    int pauseDuration = 100;
+    
+    if (currentTime - lastSiren >= (sirenState ? pauseDuration : sirenDuration)) {
+      digitalWrite(siren_output, sirenState ? LOW : HIGH);
+      sirenState = !sirenState;
+      lastSiren = currentTime;
+      
+      if (!sirenState) {
+        prematureSirenCount++;
+        if (prematureSirenCount >= 3) {
+          prematureActive = false;
+          digitalWrite(siren_output, LOW);
+        }
+      }
+    }
+  }
 }
 
 // journey orchestration functions
@@ -379,6 +507,14 @@ void admin_menu() {
 }
 
 void loop() {
+  // Reset watchdog timer at start of each loop
+  wdt_reset();
+  
+  // Handle non-blocking operations
+  handle_error_blinking();
+  handle_self_destruct();
+  handle_premature_explosion();
+  
   switch (current_state) {
     case INIT_STATE:
       start_menu();
