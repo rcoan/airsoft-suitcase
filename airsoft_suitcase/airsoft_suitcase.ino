@@ -404,6 +404,13 @@ void handle_master_password() {
 }
 
 void handle_team_password(int team_index) {
+  if (current_state == EXPLOSION_STATE || current_state == DISARMED_STATE || current_state == PREMATURE_EXPLOSION_STATE) {
+    // In explosion/disarmed states, only master password should work
+    // Team passwords should be ignored to prevent team override
+    Serial.println("Team password ignored - only master password allowed in this state");
+    return; // Exit without changing anything
+  }
+  
   Serial.print("Team password correct - Team ");
   Serial.println((char)('A' + team_index));
   valid_pass();
@@ -495,7 +502,6 @@ void process_disarm_bomb(){
 }
 
 void process_self_destruct(){
-  clear_lcd();
   print_line("Missao falha!", 0);
   print_line("Todo time morto", 1);
   start_alarm(ALARM_SELF_DESTRUCT);
@@ -634,8 +640,9 @@ void countdown_menu(){
 }
 
 void show_status_menu(const char* message) {
-  set_display_line(0, message);
-  set_display_char(0, 14, pass_team);
+  char status_line[17];
+  snprintf(status_line, sizeof(status_line), "%-14s %c", message, pass_team);
+  set_display_line(0, status_line);
   update_lcd_display();
   process_input();
 }
@@ -649,9 +656,7 @@ void premature_explosion_menu(){
 }
 
 void disarmed_menu(){
-  set_display_line(0, "Desarmada!");
-  set_display_char(0, 11, pass_team);
-  update_lcd_display();
+  show_status_menu("Desarmada!");
   process_input();
 }
 
