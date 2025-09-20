@@ -137,13 +137,71 @@ void indicate_activity(int pin, int duration = 50){
   }
 }
 
-// Unified display system
-struct DisplayCache {
-  String lastPasswordDisplay = "";
-  String lastTimerDisplay = "";
+// Unified display system with dedicated matrix
+struct DisplayMatrix {
+  char line0[17] = "";  // 16 chars + null terminator
+  char line1[17] = "";  // 16 chars + null terminator
   bool needsUpdate = false;
   int lastDisplayedSeconds = -1;
 } display;
+
+// Display management functions
+void set_display_line(int line, const char* text) {
+  if (line == 0) {
+    strncpy(display.line0, text, 16);
+    display.line0[16] = '\0';  // Ensure null termination
+  } else if (line == 1) {
+    strncpy(display.line1, text, 16);
+    display.line1[16] = '\0';  // Ensure null termination
+  }
+  display.needsUpdate = true;
+}
+
+void set_display_char(int line, int pos, char c) {
+  if (line == 0 && pos >= 0 && pos < 16) {
+    display.line0[pos] = c;
+    display.needsUpdate = true;
+  } else if (line == 1 && pos >= 0 && pos < 16) {
+    display.line1[pos] = c;
+    display.needsUpdate = true;
+  }
+}
+
+void clear_display_line(int line) {
+  if (line == 0) {
+    memset(display.line0, ' ', 16);
+    display.line0[16] = '\0';
+  } else if (line == 1) {
+    memset(display.line1, ' ', 16);
+    display.line1[16] = '\0';
+  }
+  display.needsUpdate = true;
+}
+
+void clear_display() {
+  memset(display.line0, ' ', 16);
+  memset(display.line1, ' ', 16);
+  display.line0[16] = '\0';
+  display.line1[16] = '\0';
+  display.needsUpdate = true;
+  lcd.clear();
+  Serial.println("LCD: CLEARED");
+}
+
+void update_lcd_display() {
+  if (display.needsUpdate) {
+    lcd.setCursor(0, 0);
+    lcd.print(display.line0);
+    lcd.setCursor(0, 1);
+    lcd.print(display.line1);
+    display.needsUpdate = false;
+    
+    Serial.print("LCD Line 0: ");
+    Serial.println(display.line0);
+    Serial.print("LCD Line 1: ");
+    Serial.println(display.line1);
+  }
+}
 
 // Unified input system
 struct InputSystem {
@@ -154,22 +212,15 @@ struct InputSystem {
 
 void update_display(bool is_timer = false) {
   if (is_timer) {
-    String currentTimerDisplay = String(timer_buf);
-    if (currentTimerDisplay != display.lastTimerDisplay || display.needsUpdate) {
-      print_line(timer_buf, 1);
-      display.lastTimerDisplay = currentTimerDisplay;
-      display.needsUpdate = false;
-    }
+    // Update timer display in matrix
+    set_display_line(1, timer_buf);
     lcd.setCursor(timer_count, 1);
   } else {
-    String currentPasswordDisplay = String(current_password);
-    if (currentPasswordDisplay != display.lastPasswordDisplay || display.needsUpdate) {
-      print_line(current_password, 1);
-      display.lastPasswordDisplay = currentPasswordDisplay;
-      display.needsUpdate = false;
-    }
+    // Update password display in matrix
+    set_display_line(1, current_password);
     lcd.setCursor(pass_count, 1);
   }
+  update_lcd_display();
 }
 
 void process_input(bool is_timer = false){
@@ -199,8 +250,6 @@ void reset_current_timer_input() {
   memset(timer_buf, '\0', (timer_length + 1) * sizeof(char));
   timer_count = 0;
   clear_lcd();
-  display.lastTimerDisplay = ""; // Reset cache
-  display.needsUpdate = true;
 }
 
 void valid_pass(){
@@ -208,20 +257,17 @@ void valid_pass(){
 }
 
 void print_line(const char* string, uint8_t line) {
-  lcd.setCursor(0, line);
-  lcd.printstr(string);
-  Serial.print("LCD Line "); Serial.print(line); Serial.print(": "); Serial.println(string);
+  set_display_line(line, string);
+  update_lcd_display();
 }
 
 void print_digit(char value, uint8_t line, uint8_t pos) {
-  lcd.setCursor(pos, line);
-  lcd.print(value);
-  Serial.print("LCD Digit at ("); Serial.print(pos); Serial.print(","); Serial.print(line); Serial.print("): "); Serial.println(value);
+  set_display_char(line, pos, value);
+  update_lcd_display();
 }
 
 void clear_lcd() {
-  lcd.clear();
-  Serial.println("LCD: CLEARED");
+  clear_display();
 }
 
 void format_sec_to_print(int sec){
@@ -230,13 +276,9 @@ void format_sec_to_print(int sec){
     int minutes = sec / 60;
     int sec_left = sec % 60;
     
-    lcd.setCursor(0, 0);
-    lcd.print("Ativacao: ");
-    if (minutes < 10) lcd.print("0");
-    lcd.print(minutes);
-    lcd.print(":");
-    if (sec_left < 10) lcd.print("0");
-    lcd.print(sec_left);
+    char timeStr[17];
+    snprintf(timeStr, sizeof(timeStr), "Ativacao: %02d:%02d", minutes, sec_left);
+    set_display_line(0, timeStr);
     
     Serial.print("Ativacao: ");
     if (minutes < 10) Serial.print("0");
@@ -246,6 +288,7 @@ void format_sec_to_print(int sec){
     Serial.println(sec_left);
     
     display.lastDisplayedSeconds = sec;
+    update_lcd_display();
   }
 }
 
@@ -260,15 +303,13 @@ void reset_current_password_input() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
   clear_lcd();
-  display.lastPasswordDisplay = ""; // Reset cache
-  display.needsUpdate = true;
 }
 
 void reset_current_password_input_no_clear() {
   memset(current_password, '\0', (Password_Length + 1) * sizeof(char));
   pass_count = 0;
-  display.lastPasswordDisplay = ""; // Reset cache
-  display.needsUpdate = true;
+  clear_display_line(1);
+  update_lcd_display();
 }
 
 // Unified error system
@@ -568,8 +609,9 @@ void start_menu() {
     Serial.println("start_menu: Display update needed");
     clear_lcd();
     delay(10); // Small delay to ensure clear completes
-    print_line("Insira a senha:", 0);
-    display.needsUpdate = true; // Force display update
+    set_display_line(0, "Insira a senha:");
+    clear_display_line(1);
+    update_lcd_display();
     firstTime = false;
     lastState = INIT_STATE;
     force_start_menu_update = false; // Reset the flag
@@ -594,8 +636,9 @@ void countdown_menu(){
 }
 
 void show_status_menu(const char* message) {
-  print_line(message, 0);
-  print_digit(pass_team, 0, 14);
+  set_display_line(0, message);
+  set_display_char(0, 14, pass_team);
+  update_lcd_display();
   process_input();
 }
 
@@ -613,8 +656,9 @@ void disarmed_menu(){
 
 void admin_menu() {
   if(adm_opt == adm_opt_default) {
-    print_line("Admin menu", 0);
-    print_line("1=Timer, 2=Pass", 1);
+    set_display_line(0, "Admin menu");
+    set_display_line(1, "1=Timer, 2=Pass");
+    update_lcd_display();
     char input_key = keypad.getKey();
 
     if (input_key){
@@ -634,7 +678,8 @@ void admin_menu() {
       clear_lcd();
     }
   } else if (adm_opt == adm_opt_timer) {
-    print_line("Enter minutes:", 0);
+    set_display_line(0, "Enter minutes:");
+    update_lcd_display();
     process_input(true);
   } else if (adm_opt == adm_opt_password) {
     handle_admin_password_input();
@@ -644,7 +689,8 @@ void admin_menu() {
 }
 
 void handle_admin_password_input() {
-  print_line("Insert pass", 0);
+  set_display_line(0, "Insert pass");
+  update_lcd_display();
   
   char input_key = keypad.getKey();
   if (input_key) {
@@ -667,7 +713,8 @@ void handle_admin_password_input() {
       if (pass_count < Password_Length) {
         current_password[pass_count] = input_key;
         pass_count++;
-        print_line(current_password, 1);
+        set_display_line(1, current_password);
+        update_lcd_display();
         lcd.setCursor(pass_count, 1);
       }
     } else if (input_key == 'A' || input_key == 'B' || input_key == 'C') {
@@ -685,7 +732,8 @@ void handle_admin_password_input() {
         reset_current_password_input();
         adm_opt = adm_opt_default;
         clear_lcd();
-        print_line("Password updated!", 0);
+        set_display_line(0, "Password updated!");
+        update_lcd_display();
         delay(2000);
       }
     } else if (input_key == 'D') {
