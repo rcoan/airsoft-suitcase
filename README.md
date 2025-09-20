@@ -152,272 +152,31 @@ This project is for educational and recreational use only. Use responsibly and f
 
 ### Main Power System
 
-::_schemdraw_:: alt="Power System Circuit" color="white"
-    # Power source
-    (BAT := elm.SourceV().label('11.1V LiPo\nBattery').up())
-    elm.Line().right(drawing.unit*1.5)
-    
-    # Step-down converter
-    (CONV := elm.Box().label('5V Step-down\nConverter').right())
-    elm.Line().right(drawing.unit*0.5)
-    
-    # Arduino power input
-    (ARDUINO := elm.Box().label('Arduino Uno\n5V Input').right())
-    
-    # Ground connections
-    elm.Line().down(drawing.unit*1.5).at(BAT.start)
-    (GND := elm.Ground())
-    elm.Line().right(drawing.unit*4).at(GND.start)
-    elm.Line().up(drawing.unit*0.5).at(ARDUINO.start)
-    
-    # Labels
-    elm.Line().label('+11.1V', loc='top').at(BAT.end)
-    elm.Line().label('+5V', loc='top').at(ARDUINO.end)
-    elm.Line().label('GND', loc='bot').at(GND.start)
-::end-schemdraw::
+![Power System Circuit](diagrams/power_system.svg)
 
 ### Arduino Pin Connections
 
-::_schemdraw_:: alt="Arduino Pinout Diagram" color="white"
-    # Arduino board representation
-    (ARDUINO := elm.Box().label('Arduino Uno').up())
-    
-    # Power pins
-    elm.Line().right(drawing.unit*0.5).at(ARDUINO.end)
-    (VCC := elm.Dot().label('5V'))
-    elm.Line().right(drawing.unit*0.5)
-    (GND_PIN := elm.Dot().label('GND'))
-    
-    # I2C pins for LCD
-    elm.Line().down(drawing.unit*0.3).at(ARDUINO.end)
-    elm.Line().right(drawing.unit*1.5)
-    (SDA := elm.Dot().label('A4 (SDA)'))
-    elm.Line().right(drawing.unit*0.5)
-    (SCL := elm.Dot().label('A5 (SCL)'))
-    
-    # Digital pins
-    elm.Line().down(drawing.unit*0.6).at(ARDUINO.end)
-    elm.Line().right(drawing.unit*0.5)
-    (PIN12 := elm.Dot().label('Pin 12\n(Relay)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN13 := elm.Dot().label('Pin 13\n(Buzzer/LED)'))
-    
-    # Keypad pins
-    elm.Line().down(drawing.unit*0.9).at(ARDUINO.end)
-    elm.Line().right(drawing.unit*0.5)
-    (PIN2 := elm.Dot().label('Pin 2\n(Col1)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN3 := elm.Dot().label('Pin 3\n(Col2)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN4 := elm.Dot().label('Pin 4\n(Col3)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN5 := elm.Dot().label('Pin 5\n(Col4)'))
-    
-    elm.Line().down(drawing.unit*1.2).at(ARDUINO.end)
-    elm.Line().right(drawing.unit*0.5)
-    (PIN6 := elm.Dot().label('Pin 6\n(Row1)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN7 := elm.Dot().label('Pin 7\n(Row2)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN8 := elm.Dot().label('Pin 8\n(Row3)'))
-    elm.Line().right(drawing.unit*0.5)
-    (PIN9 := elm.Dot().label('Pin 9\n(Row4)'))
-::end-schemdraw::
+![Arduino Pinout Diagram](diagrams/arduino_pinout.svg)
 
 ### Keypad Matrix Circuit
 
-::_schemdraw_:: alt="4x4 Keypad Matrix" color="white"
-    # Keypad matrix representation
-    (KP := elm.Box().label('4x4 Keypad Matrix').up())
-    
-    # Row connections
-    elm.Line().left(drawing.unit*1).at(KP.end)
-    (R1 := elm.Dot().label('Row 1\nPin 6'))
-    elm.Line().down(drawing.unit*0.3)
-    (R2 := elm.Dot().label('Row 2\nPin 7'))
-    elm.Line().down(drawing.unit*0.3)
-    (R3 := elm.Dot().label('Row 3\nPin 8'))
-    elm.Line().down(drawing.unit*0.3)
-    (R4 := elm.Dot().label('Row 4\nPin 9'))
-    
-    # Column connections
-    elm.Line().right(drawing.unit*1).at(KP.end)
-    (C1 := elm.Dot().label('Col 1\nPin 2'))
-    elm.Line().down(drawing.unit*0.3)
-    (C2 := elm.Dot().label('Col 2\nPin 3'))
-    elm.Line().down(drawing.unit*0.3)
-    (C3 := elm.Dot().label('Col 3\nPin 4'))
-    elm.Line().down(drawing.unit*0.3)
-    (C4 := elm.Dot().label('Col 4\nPin 5'))
-    
-    # Keypad layout
-    elm.Line().right(drawing.unit*0.5).at(KP.end)
-    elm.Line().down(drawing.unit*0.5)
-    elm.Line().left(drawing.unit*0.5)
-    elm.Line().up(drawing.unit*0.5)
-    elm.Line().right(drawing.unit*0.5)
-    elm.Line().down(drawing.unit*0.5)
-    elm.Line().left(drawing.unit*0.5)
-    elm.Line().up(drawing.unit*0.5)
-    elm.Line().right(drawing.unit*0.5)
-    elm.Line().down(drawing.unit*0.5)
-    elm.Line().left(drawing.unit*0.5)
-    elm.Line().up(drawing.unit*0.5)
-    elm.Line().right(drawing.unit*0.5)
-    elm.Line().down(drawing.unit*0.5)
-    elm.Line().left(drawing.unit*0.5)
-    elm.Line().up(drawing.unit*0.5)
-::end-schemdraw::
+![4x4 Keypad Matrix](diagrams/keypad_matrix.svg)
 
 ### LCD I2C Connection
 
-::_schemdraw_:: alt="LCD I2C Connection" color="white"
-    # Arduino I2C pins
-    (ARDUINO := elm.Box().label('Arduino').left())
-    elm.Line().right(drawing.unit*1)
-    (SDA_PIN := elm.Dot().label('A4 (SDA)'))
-    elm.Line().right(drawing.unit*0.5)
-    (SCL_PIN := elm.Dot().label('A5 (SCL)'))
-    
-    # I2C bus
-    elm.Line().down(drawing.unit*0.5).at(SDA_PIN.start)
-    elm.Line().right(drawing.unit*2)
-    elm.Line().up(drawing.unit*0.5)
-    
-    # LCD module
-    (LCD := elm.Box().label('16x2 LCD\nI2C (0x27)').right())
-    
-    # Power connections
-    elm.Line().down(drawing.unit*1).at(ARDUINO.end)
-    (VCC := elm.Dot().label('5V'))
-    elm.Line().right(drawing.unit*2)
-    elm.Line().up(drawing.unit*0.5)
-    (GND := elm.Dot().label('GND'))
-    elm.Line().right(drawing.unit*1)
-    elm.Line().up(drawing.unit*0.5)
-    
-    # Pull-up resistors
-    elm.Line().up(drawing.unit*0.3).at(SDA_PIN.start)
-    (R1 := elm.Resistor().up().label('4.7kΩ'))
-    elm.Line().right(drawing.unit*0.5)
-    elm.Line().to(VCC.start)
-    
-    elm.Line().up(drawing.unit*0.3).at(SCL_PIN.start)
-    (R2 := elm.Resistor().up().label('4.7kΩ'))
-    elm.Line().right(drawing.unit*0.5)
-    elm.Line().to(VCC.start)
-::end-schemdraw::
+![LCD I2C Connection](diagrams/lcd_i2c.svg)
 
 ### Buzzer and LED Circuit
 
-::_schemdraw_:: alt="Buzzer and LED Circuit" color="white"
-    # Arduino pin 13
-    (ARDUINO := elm.Box().label('Arduino\nPin 13').left())
-    elm.Line().right(drawing.unit*1)
-    (PIN13 := elm.Dot().label('Pin 13'))
-    
-    # Buzzer
-    elm.Line().down(drawing.unit*0.5)
-    (BUZZER := elm.Speaker().right().label('Buzzer\n5V'))
-    elm.Line().down(drawing.unit*0.5)
-    (GND1 := elm.Ground())
-    
-    # LED with resistor
-    elm.Line().up(drawing.unit*0.5).at(PIN13.start)
-    (RESISTOR := elm.Resistor().right().label('220Ω'))
-    (LED := elm.LED().right().label('Red LED'))
-    elm.Line().down(drawing.unit*0.5)
-    (GND2 := elm.Ground())
-    
-    # Common ground
-    elm.Line().left(drawing.unit*1).at(GND1.start)
-    elm.Line().up(drawing.unit*1)
-    elm.Line().right(drawing.unit*1)
-    elm.Line().down(drawing.unit*0.5)
-::end-schemdraw::
+![Buzzer and LED Circuit](diagrams/buzzer_led.svg)
 
 ### Siren Relay Circuit
 
-::_schemdraw_:: alt="Siren Relay Circuit" color="white"
-    # Arduino control
-    (ARDUINO := elm.Box().label('Arduino\nPin 12').left())
-    elm.Line().right(drawing.unit*1)
-    (PIN12 := elm.Dot().label('Pin 12'))
-    
-    # Relay module
-    elm.Line().down(drawing.unit*0.5)
-    (RELAY := elm.Box().label('5V Relay\nModule').right())
-    
-    # Relay connections
-    elm.Line().right(drawing.unit*1).at(RELAY.end)
-    (COM := elm.Dot().label('COM'))
-    elm.Line().down(drawing.unit*0.3)
-    (NC := elm.Dot().label('NC'))
-    elm.Line().down(drawing.unit*0.3)
-    (NO := elm.Dot().label('NO'))
-    
-    # Siren circuit
-    elm.Line().right(drawing.unit*1).at(COM.start)
-    (BATTERY := elm.SourceV().label('11.1V\nLiPo').up())
-    elm.Line().left(drawing.unit*0.5)
-    elm.Line().down(drawing.unit*0.5)
-    (SIREN := elm.Speaker().right().label('Siren\n11.1V'))
-    elm.Line().down(drawing.unit*0.5)
-    (GND := elm.Ground())
-    
-    # Relay control power
-    elm.Line().up(drawing.unit*0.5).at(RELAY.start)
-    (VCC := elm.Dot().label('5V'))
-    elm.Line().down(drawing.unit*0.3)
-    (GND_CTRL := elm.Dot().label('GND'))
-    
-    # Ground connections
-    elm.Line().left(drawing.unit*1).at(GND_CTRL.start)
-    elm.Line().down(drawing.unit*0.5)
-    elm.Line().right(drawing.unit*2)
-    elm.Line().up(drawing.unit*0.5)
-::end-schemdraw::
+![Siren Relay Circuit](diagrams/siren_relay.svg)
 
 ### Complete System Overview
 
-::_schemdraw_:: alt="Complete System Overview" color="white"
-    # Main power system
-    (BATTERY := elm.SourceV().label('11.1V LiPo').up())
-    elm.Line().right(drawing.unit*1)
-    (CONVERTER := elm.Box().label('5V\nConverter').right())
-    elm.Line().right(drawing.unit*1)
-    (ARDUINO := elm.Box().label('Arduino\nUno').right())
-    
-    # Ground
-    elm.Line().down(drawing.unit*1.5).at(BATTERY.start)
-    (GND := elm.Ground())
-    elm.Line().right(drawing.unit*3).at(GND.start)
-    elm.Line().up(drawing.unit*0.5)
-    
-    # Keypad
-    elm.Line().up(drawing.unit*0.5).at(ARDUINO.end)
-    (KEYPAD := elm.Box().label('4x4\nKeypad').right())
-    
-    # LCD
-    elm.Line().down(drawing.unit*0.5).at(ARDUINO.end)
-    (LCD := elm.Box().label('16x2 LCD\nI2C').right())
-    
-    # Buzzer/LED
-    elm.Line().down(drawing.unit*0.5).at(ARDUINO.end)
-    (BUZZER := elm.Speaker().right().label('Buzzer\n+ LED'))
-    
-    # Relay and Siren
-    elm.Line().down(drawing.unit*0.5).at(ARDUINO.end)
-    (RELAY := elm.Box().label('5V\nRelay').right())
-    elm.Line().right(drawing.unit*1)
-    (SIREN := elm.Speaker().right().label('Siren\n11.1V'))
-    
-    # Siren power from battery
-    elm.Line().left(drawing.unit*2).at(SIREN.start)
-    elm.Line().up(drawing.unit*1)
-    elm.Line().left(drawing.unit*1)
-    elm.Line().to(BATTERY.end)
-::end-schemdraw::
+![Complete System Overview](diagrams/system_overview.svg)
 
 ### Component Specifications
 
