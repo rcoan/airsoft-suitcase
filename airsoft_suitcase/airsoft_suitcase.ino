@@ -103,8 +103,8 @@ void setup() {
   delay(100);
   clear_lcd();
   delay(100);
-  lcd.home();
-  lcd.print("Test LCD");
+  set_display_line(0, "Test LCD");
+  update_lcd_display();
   delay(100);
   Serial.println("LCD initialized and test text sent");
 
@@ -214,11 +214,9 @@ void update_display(bool is_timer = false) {
   if (is_timer) {
     // Update timer display in matrix
     set_display_line(1, timer_buf);
-    lcd.setCursor(timer_count, 1);
   } else {
     // Update password display in matrix
     set_display_line(1, current_password);
-    lcd.setCursor(pass_count, 1);
   }
   update_lcd_display();
 }
@@ -715,7 +713,6 @@ void handle_admin_password_input() {
         pass_count++;
         set_display_line(1, current_password);
         update_lcd_display();
-        lcd.setCursor(pass_count, 1);
       }
     } else if (input_key == 'A' || input_key == 'B' || input_key == 'C') {
       // Team selection - save password
