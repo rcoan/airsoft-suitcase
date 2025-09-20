@@ -357,6 +357,8 @@ void handle_error_blinking() {
         if (error.blinkCount >= (max_attempts - attempts) * 2) {
           error.active = false;
           digitalWrite(activity_led_output, LOW);
+          // Force display update when error blinking finishes
+          force_start_menu_update = true;
         }
       }
     }
