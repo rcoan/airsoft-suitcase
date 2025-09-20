@@ -649,7 +649,10 @@ void premature_explosion_menu(){
 }
 
 void disarmed_menu(){
-  show_status_menu("Desarmada!");
+  set_display_line(0, "Desarmada!");
+  set_display_char(0, 11, pass_team);
+  update_lcd_display();
+  process_input();
 }
 
 void admin_menu() {
