@@ -148,6 +148,160 @@ A realistic airsoft bomb simulation system built with Arduino that features coun
 
 This project is for educational and recreational use only. Use responsibly and follow all local laws and regulations.
 
+## Wiring Diagram
+
+### Power System
+
+```
+11.1V LiPo Battery
+    |
+    | (Positive)
+    |
+    v
+[5V Step-down Converter]
+    |
+    | (5V Output)
+    |
+    v
+Arduino 5V Pin
+    |
+    | (Ground)
+    |
+    v
+Arduino GND Pin
+    |
+    | (Ground)
+    |
+    v
+Battery Negative
+```
+
+### Arduino Pin Connections
+
+#### Keypad (4x4 Matrix)
+```
+Arduino Pin  |  Keypad Connection
+-------------|------------------
+Pin 6        |  Row 1
+Pin 7        |  Row 2  
+Pin 8        |  Row 3
+Pin 9        |  Row 4
+Pin 2        |  Column 1
+Pin 3        |  Column 2
+Pin 4        |  Column 3
+Pin 5        |  Column 4
+```
+
+#### LCD Display (I2C)
+```
+Arduino Pin  |  LCD Connection
+-------------|------------------
+A4 (SDA)     |  SDA
+A5 (SCL)     |  SCL
+5V           |  VCC
+GND          |  GND
+```
+
+#### Buzzer and LED
+```
+Arduino Pin 13
+    |
+    | (Positive)
+    |
+    v
+[Buzzer Positive] + [Resistor] + [Red LED Positive]
+    |
+    | (Negative)
+    |
+    v
+Arduino GND
+```
+
+#### Siren Relay System
+```
+Arduino Pin 12
+    |
+    | (Control Signal)
+    |
+    v
+[Relay Module] IN
+    |
+    | (Ground)
+    |
+    v
+Arduino GND
+
+Relay Module:
+- VCC: 5V (from Arduino)
+- GND: Arduino GND
+- IN: Arduino Pin 12
+- NO: (Not Used)
+- NC: Siren Positive
+- COM: 11.1V Battery Positive
+
+Siren:
+- Positive: Relay NC
+- Negative: Battery Negative
+```
+
+### Visual Layout
+
+#### Arduino Pinout (Top View)
+```
+                    ┌─────────────────┐
+                    │ 5V  GND  A4 A5  │ ← I2C LCD (A4=SDA, A5=SCL)
+                    │ 13  12   2  3   │ ← Pin 13: Buzzer+LED, Pin 12: Relay
+                    │ 4   5    6  7   │ ← Keypad Columns (2,3,4,5)
+                    │ 8   9   10 11   │ ← Keypad Rows (6,7,8,9)
+                    └─────────────────┘
+```
+
+#### Keypad Layout
+```
+Keypad Layout:     Arduino Pins:
+┌─┬─┬─┬─┐          Rows:    6  7  8  9
+│1│2│3│A│          Cols:    2  3  4  5
+├─┼─┼─┼─┤
+│4│5│6│B│
+├─┼─┼─┼─┤
+│7│8│9│C│
+├─┼─┼─┼─┤
+│*│0│#│D│
+└─┴─┴─┴─┘
+```
+
+#### Power Flow
+```
+[11.1V LiPo] ──┐
+               │
+               ├─→ [5V Step-down] ──→ [Arduino 5V]
+               │
+               └─→ [Relay COM] ──→ [Siren +] ──→ [Siren -] ──→ [Battery -]
+```
+
+### Component Specifications
+
+| Component | Type | Voltage | Current | Notes |
+|-----------|------|---------|---------|-------|
+| Arduino Uno | Microcontroller | 5V | ~50mA | 6 digital pins used |
+| 4x4 Keypad | Matrix | 5V | <1mA/key | 8 wires to Arduino |
+| LCD Display | I2C 16x2 | 5V | ~20mA | Address 0x27 |
+| Relay Module | 5V SPDT | 5V control | 10A switching | For siren control |
+| Buzzer | Piezo | 5V | ~30mA | Connected to Pin 13 |
+| LED | Red | 2V forward | 20mA | With 220Ω resistor |
+| Step-down | Converter | 11.1V→5V | 2A | >85% efficiency |
+
+### Safety Checklist
+
+- [ ] **Power Polarity**: 11.1V battery positive/negative correct
+- [ ] **Step-down Output**: Verify 5V output before connecting Arduino
+- [ ] **Ground Common**: All components share common ground
+- [ ] **Relay Rating**: Ensure relay can handle siren current
+- [ ] **Wire Gauge**: Use appropriate gauge for 11.1V circuit
+- [ ] **Insulation**: All connections properly insulated
+- [ ] **Fuse**: Consider adding fuse in 11.1V circuit
+- [ ] **Testing**: Test each component individually before full assembly
+
 ## Version History
 
 - **v1.0**: Initial release with basic functionality
